@@ -1,4 +1,5 @@
 import {
+  DataContract,
   EvoSDK,
   IdentityPublicKeyInCreation,
   IdentitySigner,
@@ -7,6 +8,7 @@ import {
   PrivateKey,
   Purpose,
   SecurityLevel,
+  ensureInitialized,
   wallet,
 } from '@dashevo/evo-sdk';
 
@@ -82,6 +84,7 @@ export async function dip13KeyPath(network, identityIndex, keyIndex) {
  * @returns {Promise<EvoSDK>}
  */
 export async function createClient(network = 'testnet') {
+  await ensureInitialized();
   const factories = /** @type {Record<string, () => EvoSDK>} */ ({
     testnet: () => EvoSDK.testnetTrusted(),
     mainnet: () => EvoSDK.mainnetTrusted(),
@@ -614,6 +617,281 @@ export async function setupDashClient({
   }
 
   return { sdk, keyManager, addressKeyManager };
+}
+
+/**
+ * @param {EvoSDK} sdk
+ * @param {string} identityId
+ * @returns {Promise<Identity | undefined>}
+ */
+export async function fetchIdentityById(sdk, identityId) {
+  if (!identityId) {
+    throw new Error('Identity ID is required');
+  }
+
+  return sdk.identities.fetch(identityId);
+}
+
+/**
+ * @param {string} privateKeyWif
+ * @returns {IdentitySigner}
+ */
+export function createIdentitySignerFromWif(privateKeyWif) {
+  const signer = new IdentitySigner();
+  signer.addKeyFromWif(privateKeyWif);
+  return signer;
+}
+
+/**
+ * @param {string} privateKeyHex
+ * @param {string} [network='testnet']
+ * @returns {IdentitySigner}
+ */
+export function createIdentitySignerFromHex(
+  privateKeyHex,
+  network = 'testnet',
+) {
+  const signer = new IdentitySigner();
+  signer.addKey(PrivateKey.fromHex(privateKeyHex, network));
+  return signer;
+}
+
+/**
+ * Accept a single-key secret as either WIF or raw hex.
+ *
+ * @param {{
+ *   privateKeyWif?: string | null,
+ *   privateKeyHex?: string | null,
+ *   network?: string,
+ * }} params
+ * @returns {{
+ *   privateKey: PrivateKey,
+ *   signer: IdentitySigner,
+ *   format: 'wif' | 'hex',
+ * }}
+ */
+export function parseIdentityPrivateKey({
+  privateKeyWif,
+  privateKeyHex,
+  network = 'testnet',
+}) {
+  const trimmedWif = privateKeyWif?.trim();
+  const trimmedHex = privateKeyHex?.trim();
+
+  if (trimmedWif) {
+    try {
+      const privateKey = PrivateKey.fromWIF(trimmedWif);
+
+      return {
+        privateKey,
+        signer: createIdentitySignerFromWif(trimmedWif),
+        format: 'wif',
+      };
+    } catch {
+      if (!trimmedHex) {
+        const normalizedHex = trimmedWif.replace(/^0x/i, '');
+        if (/^[0-9a-fA-F]{64}$/.test(normalizedHex)) {
+          const privateKey = PrivateKey.fromHex(normalizedHex, network);
+
+          return {
+            privateKey,
+            signer: createIdentitySignerFromHex(normalizedHex, network),
+            format: 'hex',
+          };
+        }
+      }
+    }
+  }
+
+  if (trimmedHex) {
+    const normalizedHex = trimmedHex.replace(/^0x/i, '');
+    const privateKey = PrivateKey.fromHex(normalizedHex, network);
+
+    return {
+      privateKey,
+      signer: createIdentitySignerFromHex(normalizedHex, network),
+      format: 'hex',
+    };
+  }
+
+  throw new Error('No private key configured');
+}
+
+/**
+ * Best-effort contract builder for the EvoGuard registry schema.
+ * The accepted schema shape is SDK-specific, so this helper centralizes it.
+ *
+ * @param {object} opts
+ * @param {string} opts.identityId
+ * @param {bigint} opts.identityNonce
+ * @param {Record<string, unknown>} opts.schema
+ * @returns {DataContract}
+ */
+export function createDataContractFromSchema({
+  identityId,
+  identityNonce,
+  schema,
+}) {
+  return new DataContract(
+    identityId,
+    identityNonce,
+    schema,
+    {},
+    {},
+    false,
+    1,
+  );
+}
+
+/**
+ * @param {{
+ *   sdk: EvoSDK,
+ *   identityId: string,
+ *   privateKeyWif?: string | null,
+ *   privateKeyHex?: string | null,
+ *   network?: string,
+ * }} params
+ * @returns {Promise<{
+ *   identity: Identity | undefined,
+  *   privateKeyProvided: boolean,
+ *   privateKeyFormat: 'wif' | 'hex' | null,
+ *   keyMatchesIdentity: boolean,
+ *   matchedKeyId: number | null,
+ *   matchedPurpose: string | null,
+ *   matchedSecurityLevel: string | null,
+ *   canRegisterNames: boolean,
+ *   canDeployContracts: boolean,
+ *   identityKey: IdentityPublicKey | undefined,
+ *   signer: IdentitySigner | null,
+ *   error: string | null,
+ * }>}
+ */
+export async function matchPrivateKeyToIdentityKey({
+  sdk,
+  identityId,
+  privateKeyWif,
+  privateKeyHex,
+  network = 'testnet',
+}) {
+  const identity = await fetchIdentityById(sdk, identityId);
+
+  if (!identity) {
+    return {
+      identity,
+      privateKeyProvided: Boolean(privateKeyWif || privateKeyHex),
+      privateKeyFormat: null,
+      keyMatchesIdentity: false,
+      matchedKeyId: null,
+      matchedPurpose: null,
+      matchedSecurityLevel: null,
+      canRegisterNames: false,
+      canDeployContracts: false,
+      identityKey: undefined,
+      signer: null,
+      error: `Identity "${identityId}" not found on-chain.`,
+    };
+  }
+
+  if (!privateKeyWif && !privateKeyHex) {
+    return {
+      identity,
+      privateKeyProvided: false,
+      privateKeyFormat: null,
+      keyMatchesIdentity: false,
+      matchedKeyId: null,
+      matchedPurpose: null,
+      matchedSecurityLevel: null,
+      canRegisterNames: false,
+      canDeployContracts: false,
+      identityKey: undefined,
+      signer: null,
+      error: null,
+    };
+  }
+
+  try {
+    const parsedKey = parseIdentityPrivateKey({
+      privateKeyWif,
+      privateKeyHex,
+      network,
+    });
+    const privateKey = parsedKey.privateKey;
+    const privateKeyBytes = privateKey.toBytes();
+    const signer = parsedKey.signer;
+    const keys = identity.getPublicKeys();
+    const matchingKey = keys.find((key) =>
+      key.validatePrivateKey(privateKeyBytes, network),
+    );
+
+    if (!matchingKey || matchingKey.disabledAt !== undefined) {
+      return {
+        identity,
+        privateKeyProvided: true,
+        privateKeyFormat: parsedKey.format,
+        keyMatchesIdentity: false,
+        matchedKeyId: null,
+        matchedPurpose: null,
+        matchedSecurityLevel: null,
+        canRegisterNames: false,
+        canDeployContracts: false,
+        identityKey: undefined,
+        signer,
+        error:
+          matchingKey?.disabledAt !== undefined
+            ? 'The configured private key matches a disabled identity key.'
+            : 'The configured private key could not be matched to this identity.',
+      };
+    }
+
+    const purpose = matchingKey.purpose;
+    const securityLevel = matchingKey.securityLevel;
+    const purposeNumber = matchingKey.purposeNumber;
+    const securityLevelNumber = matchingKey.securityLevelNumber;
+    const canRegisterNames =
+      (purposeNumber === Purpose.AUTHENTICATION ||
+        purposeNumber === Purpose.OWNER) &&
+      (securityLevelNumber === SecurityLevel.HIGH ||
+        securityLevelNumber === SecurityLevel.CRITICAL ||
+        securityLevelNumber === SecurityLevel.MASTER);
+    const canDeployContracts =
+      (purposeNumber === Purpose.AUTHENTICATION ||
+        purposeNumber === Purpose.OWNER) &&
+      (securityLevelNumber === SecurityLevel.CRITICAL ||
+        securityLevelNumber === SecurityLevel.MASTER);
+
+    return {
+      identity,
+      privateKeyProvided: true,
+      privateKeyFormat: parsedKey.format,
+      keyMatchesIdentity: true,
+      matchedKeyId: matchingKey.keyId,
+      matchedPurpose: purpose,
+      matchedSecurityLevel: securityLevel,
+      canRegisterNames,
+      canDeployContracts,
+      identityKey: matchingKey,
+      signer,
+      error: null,
+    };
+  } catch (error) {
+    return {
+      identity,
+      privateKeyProvided: true,
+      privateKeyFormat: null,
+      keyMatchesIdentity: false,
+      matchedKeyId: null,
+      matchedPurpose: null,
+      matchedSecurityLevel: null,
+      canRegisterNames: false,
+      canDeployContracts: false,
+      identityKey: undefined,
+      signer: null,
+      error:
+        error instanceof Error
+          ? `Invalid private key: ${error.message}`
+          : 'Invalid private key',
+    };
+  }
 }
 
 export { IdentityKeyManager, AddressKeyManager, clientConfig };
