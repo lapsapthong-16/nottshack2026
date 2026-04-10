@@ -1,0 +1,300 @@
+{
+  "project": {
+    "name": "Dash Security Audit Platform",
+    "description": "AI-powered npm package security audit platform built on Dash blockchain. Developers pay with Dash for automated security audits of npm packages, with results stored on-chain via Dash Platform.",
+    "hackathon_target_track": "DASH",
+    "category": "AI + crypto tools"
+  },
+
+  "inspiration": {
+    "project_name": "NpmGuard",
+    "hackathon": "ETHGlobal Cannes 2026",
+    "github": "https://github.com/kryczkal/EthCannes2026",
+    "ethglobal_showcase": "https://ethglobal.com/showcase/npmguard-aeihd",
+    "prize_won": "ENS - Most Creative Use of ENS (3rd place)",
+    "team_members": ["PiotrTyrakowski", "kryczkal", "Tanguyvans", "claude"],
+    "tech_stack_used": {
+      "frontend": "React + Vite + Tailwind CSS + Zustand + CodeMirror 6",
+      "engine": "TypeScript + Hono.js REST API",
+      "llm": "Gemini 2.5 Flash (OpenAI-compatible API), switchable to Anthropic",
+      "monitoring": "Chainlink CRE (Cron + HTTP + EVMClient)",
+      "payment": "Solidity smart contract on 0G Galileo Testnet + WalletConnect v2",
+      "on_chain_registry": "ENS subnames on Sepolia",
+      "storage": "IPFS via Pinata",
+      "cli": "TypeScript, published as npmguard-cli on npm",
+      "sandbox": "Docker (node:22-slim) + Vitest + MSW",
+      "hosting": "DigitalOcean Droplet"
+    },
+    "architecture": {
+      "problem": "npm ecosystem has massive supply chain security problem. Malicious packages get published constantly — typosquats, hijacked accounts, credential exfiltration during postinstall. No automated, verifiable pre-install audit exists.",
+      "solution": "Autonomous AI audit pipeline that detects new npm versions, runs multi-phase security analysis, publishes verifiable results on-chain.",
+      "entry_points": [
+        {
+          "name": "Chainlink CRE Cron",
+          "description": "Automated monitoring every 5 min. Fetches npm registry, reads ENS on-chain (trustless via EVMClient), triggers audit if not yet audited. Free, authenticated via X-API-Key."
+        },
+        {
+          "name": "CLI On-Demand",
+          "description": "Developer runs npx npmguard-cli install <pkg>. Checks ENS for existing audit. If none, pays 0.01 0G via private key or WalletConnect QR. Engine verifies payment on-chain, runs pipeline, publishes results."
+        },
+        {
+          "name": "Frontend Dashboard",
+          "description": "User enters package name on React dashboard. POST /audit/stream returns auditId. Frontend connects via SSE for real-time streaming of every phase."
+        }
+      ],
+      "audit_pipeline_phases": [
+        {
+          "phase": "0 - Resolve",
+          "description": "Downloads npm tarball, decompresses, stores in temp directory",
+          "timeout": "2 minutes"
+        },
+        {
+          "phase": "0b - Inventory",
+          "description": "Parses package.json, classifies files (detects binaries via magic bytes), runs dealbreaker checks (curl|sh, wget|bash, missing install scripts)",
+          "output": "File list, flags, structured inventory"
+        },
+        {
+          "phase": "1a - Triage",
+          "description": "LLM (Claude Haiku) scores every source file for risk: NETWORK, FILESYSTEM, EVAL, ENV_VARS, PROCESS_SPAWN. Aggregates into 0-10 risk score. If score < 3, returns SAFE immediately.",
+          "timeout": "Scales with file count (base 2min, +50% per 20 extra files, max 4x)"
+        },
+        {
+          "phase": "1b - Investigation",
+          "description": "Only runs if triage risk >= 3. Agentic LLM (Claude Sonnet) with tools: readFile, listFiles, searchFiles, evalJs, requireAndTrace, runLifecycleHook, fastForwardTimers. Runs inside Docker sandbox (no network, read-only, 512MB RAM, 1 CPU).",
+          "tools": ["readFile", "listFiles", "searchFiles", "evalJs", "requireAndTrace", "runLifecycleHook", "fastForwardTimers"]
+        },
+        {
+          "phase": "1c - Test Generation",
+          "description": "Converts findings into Vitest exploit tests using MSW mocks (intercept HTTP), env stubs (NPM_TOKEN, AWS_ACCESS_KEY_ID), fs spies."
+        },
+        {
+          "phase": "2 - Verify",
+          "description": "Runs generated tests in Docker sandbox. Up to 3 retries per failed test. Marks proofs as TEST_CONFIRMED or TEST_UNCONFIRMED.",
+          "timeout": "15s per test"
+        }
+      ],
+      "post_pipeline": {
+        "ipfs": "Uploads source tarball + report JSON to Pinata, returns CID",
+        "ens": "Writes text records to {version}.{package}.npmguard.eth on Sepolia: verdict, score, capabilities, report_cid, source_cid, date"
+      },
+      "sse_events": [
+        "audit_started", "phase_started", "phase_completed",
+        "file_list", "file_analyzing", "file_verdict",
+        "triage_complete", "triage_progress",
+        "agent_thinking", "agent_tool_call", "agent_tool_result", "agent_reasoning",
+        "finding_discovered", "verdict_reached",
+        "publish_complete", "publish_failed"
+      ]
+    },
+    "key_contracts": {
+      "0g_galileo_payment": "0x1201448ae5f00e1783036439569e71ab3757d0de",
+      "ens_registry_sepolia": "0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e",
+      "ens_resolver_sepolia": "0xE99638b40E4Fff0129D56f03b55b6bbC4BBE49b5"
+    },
+    "live_urls": {
+      "frontend": "http://209.38.42.28:3000",
+      "engine_api": "http://209.38.42.28:8000"
+    }
+  },
+
+  "hackathon_tracks": {
+    "bga": {
+      "name": "Blockchain for Good Alliance (BGA)",
+      "prize_pool": {
+        "total": 1500,
+        "currency": "USD",
+        "first": 750,
+        "second": 500,
+        "third": 250
+      },
+      "mission": "Harness blockchain technology to tackle critical global challenges. Non-profit initiative aligned with UN Sustainable Development Goals.",
+      "judging_criteria": [
+        "SDG Alignment (must align with one or more UN SDGs)",
+        "Measurable real-world social/environmental impact",
+        "Novel/creative use of blockchain",
+        "Realistic execution plan and team capability",
+        "Scalability potential",
+        "Long-term viability (not dependent on one-time funding)",
+        "Demo quality and presentation"
+      ],
+      "qualifying_themes": [
+        "Digital Public Goods (governance, digital identity, transparent data)",
+        "Finance for Inclusion (unbanked populations, cross-border remittances)",
+        "Sustainability and Climate (carbon tracking, supply chain, ESG)"
+      ],
+      "example_winners": [
+        "Token Tails — converts digital participation into continuous funding for animal shelters (1st, $30K)",
+        "Rumsan — blockchain for humanitarian aid distribution (2nd, $20K)",
+        "Plastiks — plastic waste tracking/recycling"
+      ],
+      "official_website": "https://chainforgood.org/",
+      "fit_assessment": "WEAK — security audit tool doesn't align with SDGs. Don't target this track."
+    },
+
+    "dcai": {
+      "name": "DCAI (by Dynachain)",
+      "judging_criteria": {
+        "main_goal": "Encourage creative applications using DCAI ecosystem tools",
+        "project_types": ["Web apps", "AI assistants", "games", "dashboards", "automation tools", "developer tools", "productivity apps"],
+        "blockchain_requirement": "Must integrate at least one interaction with their L3 on Base (API, data access, or ecosystem interaction)",
+        "focus": "Innovation and creativity rather than strict blockchain implementation",
+        "minimum_requirement": "Use at least one API or interaction from the L3 network"
+      },
+      "technical_details": {
+        "reality": "DCAI is an ERC-20 token on Base (chain ID 8453). Despite 'L3' marketing, there is NO actual L3 rollup chain — just smart contracts on Base mainnet.",
+        "token_contract": "0xb8147ce9b0dac5f8165785dec6494e57748e4b78",
+        "staking_contract": "0xc26951b472906a8d44762ec189037bccf7756be9",
+        "deployer": "0xf74001cd816c1a4d92e714a21483845be936c4cf",
+        "chain": "Base (chain ID 8453)",
+        "rpc": "https://mainnet.base.org",
+        "block_explorer": "https://basescan.org",
+        "token_standard": "ERC-20",
+        "total_supply": "100,000,000 DCAI",
+        "holders": "~25,252",
+        "buy_sell_tax": "0.3% each direction",
+        "price_approx": "$2.56-2.61 USD",
+        "market_cap_approx": "$256-260M"
+      },
+      "developer_ecosystem": {
+        "sdk": "None — no public SDK, no developer API, no testnet",
+        "documentation": "https://dc-ai.gitbook.io/dcai-ecosystem/",
+        "llm_docs": "https://dc-ai.gitbook.io/dcai-ecosystem/llms-full.txt",
+        "github_repos": [
+          "https://github.com/dynachain/contracts",
+          "https://github.com/dynachain/dcai-contracts"
+        ],
+        "website": "https://dcai.ai/",
+        "parent": "https://dynachain.io/"
+      },
+      "tokenomics": {
+        "ecosystem_standard": "60%",
+        "staking": "15%",
+        "team": "6%",
+        "ecosystem_senior": "6%",
+        "marketing": "4%",
+        "exchange_liquidity": "3%",
+        "treasury": "3%",
+        "advisor": "3%"
+      },
+      "fit_assessment": "VALID but SHALLOW — the only realistic integration is accepting DCAI as payment on Base. No SDK, no API, no testnet. Integration would be cosmetic."
+    },
+
+    "dash": {
+      "name": "DASH",
+      "judging_criteria": {
+        "description": "Build real-world applications using Dash — fast, low-cost payments + Web3 platform (Drive & DAPI).",
+        "project_types": ["Payment solutions", "dApps & Web3 apps", "Wallet integrations", "AI + crypto tools", "Consumer apps"],
+        "requirements": ["Working prototype or demo", "Clear use case and value", "Integration with Dash (payments or platform)", "Final presentation"]
+      },
+      "platform_overview": {
+        "what_is_dash_platform": "Web3 technology stack built as Layer 2 on Dash payment network. Transforms masternode network into decentralized cloud.",
+        "drive": "Decentralized storage on masternode network. Built on GroveDB (hierarchical authenticated database with cryptographic proofs for any query). Stores documents validated against data contracts.",
+        "dapi": "Decentralized API exposing JSON-RPC and gRPC endpoints. Unified access to Layer 1 (Core) and Layer 2 (Platform). Runs on masternode infrastructure. TLS encrypted. Returns cryptographic proofs.",
+        "dpns": "Dash Platform Name Service — human-readable names (like ENS but native to Dash).",
+        "instantsend": "Sub-2-second transaction finality. LLMQ quorum of masternodes approve and lock transaction. Automatic for all transactions, no extra fee.",
+        "chainlocks": "Every 12 hours, 300-400 masternode quorum finalizes blocks. Prevents 51% attacks.",
+        "coinjoin": "Optional privacy via mixing."
+      },
+      "technical_details": {
+        "transaction_speed": "<2 seconds (InstantSend)",
+        "transaction_fees": "$0.01-0.05",
+        "data_contracts": "JSON Schema-based (not Solidity). Define document types with properties, indices. Backward-compatible versioning. Any app can read any other app's contracts.",
+        "testnet": {
+          "faucet": "https://faucet.testnet.networks.dash.org/",
+          "block_explorer": "https://insight.testnet.networks.dash.org/insight/",
+          "seed_node": "https://seed-1.testnet.networks.dash.org:1443/",
+          "masternodes": 150,
+          "ports": {
+            "core_p2p": 19999,
+            "core_rpc": 19998,
+            "platform_p2p": 26656,
+            "platform_rpc": 26657,
+            "dapi_http": 3000,
+            "dapi_grpc": 3010
+          }
+        },
+        "sdks": {
+          "javascript": {
+            "package": "npm install dash (legacy) or npm install @dashevo/evo-sdk (newer)",
+            "capabilities": "Wallet ops, identity management, data contract registration, document CRUD",
+            "note": "Does NOT support proof verification — use only with trusted nodes in production"
+          },
+          "rust": {
+            "package": "dash-sdk (git dependency from dashpay/platform)",
+            "note": "Recommended for production. Full proof verification support."
+          },
+          "other": ["Java (DashJ)", "Python (PyCoin, python-dashrpc)", "PHP (Bitcoin-PHP)", "iOS (Dash-Sync)", ".NET (NBitcoin)"]
+        },
+        "grpc_endpoints": {
+          "identity": ["getIdentity", "getIdentityBalance", "getIdentityBalanceAndRevision", "getIdentityByPublicKeyHash", "getIdentityKeys", "getIdentityNonce"],
+          "data_contracts": ["getDataContract", "getDataContracts", "getDataContractHistory"],
+          "documents": ["getDocuments"],
+          "state_transitions": ["broadcastStateTransition", "waitForStateTransitionResult"]
+        },
+        "payment_processors": ["NOWPayments", "CoinPayments", "BTCPay Server", "Anypay", "dash-payment-service"],
+        "api_providers": ["BlockCypher", "NOWNodes", "Insight"]
+      },
+      "documentation_urls": {
+        "main": "https://docs.dash.org/projects/platform/en/stable/",
+        "dapi_endpoints": "https://docs.dash.org/projects/platform/en/stable/docs/reference/dapi-endpoints.html",
+        "rust_sdk": "https://docs.dash.org/projects/platform/en/stable/docs/sdk-rs/overview.html",
+        "js_sdk": "https://dashpay.github.io/platform/SDK/",
+        "platform_monorepo": "https://github.com/dashpay/platform",
+        "grovedb": "https://github.com/dashpay/grovedb",
+        "community": "https://dashdevs.org/",
+        "data_contracts_blog": "https://www.dash.org/blog/dash-platform-data-contracts/",
+        "testnet_tutorial": "https://docs.dash.org/projects/platform/en/stable/docs/tutorials/connecting-to-testnet.html",
+        "dashpay_ai_tool": "https://dashpay.io"
+      },
+      "fit_assessment": "STRONGEST FIT — 'AI + crypto tools' is a listed category. Deep integration possible: DPNS for package naming, Drive for audit storage, InstantSend for payments, Data Contracts for on-chain results, DAPI for trustless queries. JS SDK available."
+    }
+  },
+
+  "recommended_strategy": {
+    "target_track": "DASH",
+    "reasoning": [
+      "AI + crypto tools is explicitly listed as a project type",
+      "Dash Platform provides deep infrastructure (Drive, DAPI, DPNS, Data Contracts) — not just a payment token",
+      "JS/TS SDK available — matches existing TypeScript codebase",
+      "Testnet with faucet available for development",
+      "InstantSend (<2s payments) is a strong demo moment",
+      "Data contracts (JSON Schema) replace the need for Solidity — faster to build in hackathon",
+      "DPNS can replace ENS subnames for package naming",
+      "Drive can replace IPFS for audit report storage"
+    ],
+    "tech_mapping_from_npmguard": {
+      "ens_subnames_sepolia": {
+        "replace_with": "DPNS (Dash Platform Name Service)",
+        "why": "Same concept, native to Dash, no external dependency"
+      },
+      "ipfs_via_pinata": {
+        "replace_with": "Drive (Dash decentralized storage)",
+        "why": "Store audit reports as data contract documents, no Pinata/IPFS needed"
+      },
+      "0g_galileo_smart_contract": {
+        "replace_with": "Dash InstantSend payments",
+        "why": "Sub-2-second confirmation, $0.01 fees, better UX"
+      },
+      "solidity_payment_contract": {
+        "replace_with": "Dash data contracts (JSON Schema)",
+        "why": "No Solidity needed, just JSON — faster to build"
+      },
+      "chainlink_cre_monitoring": {
+        "replace_with": "Custom cron or keep similar approach",
+        "why": "Chainlink is not part of Dash ecosystem, simplify to a cron job"
+      }
+    },
+    "key_differentiators_from_npmguard": [
+      "Dash-native storage and naming (not ENS/IPFS)",
+      "InstantSend payment UX (<2s confirmation in demo)",
+      "No Solidity — data contracts in JSON Schema",
+      "Different target audience or scope angle needed to avoid looking like a copy"
+    ],
+    "warnings": [
+      "Don't just copy NpmGuard — judges can see it. Need a meaningfully different angle.",
+      "Don't try to hit both DCAI and DASH tracks with one project — neither integration will be deep enough.",
+      "'Top up tokens to pay for audits' alone is a thin integration. Use Drive, DAPI, DPNS deeply.",
+      "BGA track does not fit — security audit tool doesn't align with UN SDGs."
+    ]
+  }
+}
