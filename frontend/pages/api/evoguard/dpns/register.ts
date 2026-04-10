@@ -35,9 +35,16 @@ export default async function handler(
       registration,
     });
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : JSON.stringify(error);
+    console.error("DPNS register error:", error);
     return res.status(400).json({
       ok: false,
-      error: error instanceof Error ? error.message : "Failed to register DPNS alias",
+      error: message || "Failed to register DPNS alias",
     });
   }
 }

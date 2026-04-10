@@ -1,9 +1,17 @@
-import { DataContract } from "@dashevo/evo-sdk";
-import { createClient, createDataContractFromSchema } from "../../setupDashClient.mjs";
+import {
+  DataContract,
+  IdentityPublicKeyInCreation,
+  IdentitySigner,
+  KeyType,
+  PrivateKey,
+  Purpose,
+  SecurityLevel,
+} from "@dashevo/evo-sdk";
+import crypto from "crypto";
+import { createClient } from "../../setupDashClient.mjs";
 import { getEvoguardConfig } from "./evoguardConfig";
 import { resolveWritableIdentityContext } from "./identityCredentialService";
 import {
-  buildEvoguardContractJson,
   buildEvoguardContractSchema,
   getEvoguardSchemaSummary,
 } from "./schema/evoguardContract";
@@ -82,16 +90,16 @@ export async function getContractStatus() {
   }
 }
 
-function buildContractForIdentity(identityId: string, identityNonce: bigint) {
-  try {
-    return createDataContractFromSchema({
-      identityId,
-      identityNonce,
-      schema: buildEvoguardContractSchema(),
-    });
-  } catch {
-    return DataContract.fromJSON(buildEvoguardContractJson(identityId), false, 1);
-  }
+function buildContractForIdentity(ownerId: string, identityNonce: bigint) {
+  return new DataContract(
+    ownerId,
+    (identityNonce || 0n) + 1n,
+    buildEvoguardContractSchema(),
+    null,
+    {},
+    true,
+    1,
+  );
 }
 
 export async function deployEvoguardContract() {
@@ -113,17 +121,72 @@ export async function deployEvoguardContract() {
   }
 
   const sdk = await createClient(config.network);
-  const identityNonce = await sdk.identities.nonce(context.identityId);
 
-  if (identityNonce === null) {
-    throw new Error("Could not resolve the identity nonce needed for contract deployment.");
+  // Contract deployment requires CRITICAL or HIGH key, not MASTER.
+  // If the matched key is MASTER, add a new CRITICAL key to the identity first.
+  let deployKey = context.identityKey;
+  let deploySigner = context.signer;
+
+  const secLevel = (context.identityKey as any).securityLevel ?? (context.identityKey as any).securityLevelNumber;
+  const isMaster = secLevel === "MASTER" || secLevel === 0;
+
+  if (isMaster) {
+    // Generate a new random private key for CRITICAL level
+    const randomBytes = crypto.randomBytes(32);
+    const newPrivateKey = PrivateKey.fromBytes(new Uint8Array(randomBytes), config.network);
+    const newPublicKeyData = newPrivateKey.getPublicKey().toBytes();
+
+    // Find next available key ID
+    const identity = context.identity as any;
+    const existingKeys = identity.getPublicKeys ? identity.getPublicKeys() : [];
+    const maxKeyId = existingKeys.reduce((max: number, k: any) => Math.max(max, k.keyId ?? 0), 0);
+    const newKeyId = maxKeyId + 1;
+
+    // Create the new CRITICAL key
+    const newKeyInCreation = new IdentityPublicKeyInCreation(
+      newKeyId,
+      Purpose.AUTHENTICATION,
+      SecurityLevel.CRITICAL,
+      KeyType.ECDSA_SECP256K1,
+      false,
+      new Uint8Array(newPublicKeyData),
+      undefined,
+      undefined,
+    );
+
+    // Add the new key to the identity using the MASTER signer
+    await sdk.identities.update({
+      identity,
+      addPublicKeys: [newKeyInCreation],
+      signer: context.signer,
+    });
+
+    // Re-fetch identity to get the newly added key
+    const updatedIdentity = await sdk.identities.fetch(context.identityId);
+    const updatedKeys = updatedIdentity?.getPublicKeys() ?? [];
+    const criticalKey = updatedKeys.find((k: any) => k.keyId === newKeyId);
+
+    if (!criticalKey) {
+      throw new Error("Failed to add CRITICAL key to identity.");
+    }
+
+    deployKey = criticalKey;
+
+    // Create a new signer with the new private key
+    deploySigner = new IdentitySigner();
+    deploySigner.addKey(newPrivateKey);
+
+    console.log(`Added CRITICAL key (id=${newKeyId}) to identity for contract deployment.`);
   }
+
+  const rawNonce = await sdk.identities.nonce(context.identityId);
+  const identityNonce = rawNonce != null ? BigInt(rawNonce) : 0n;
 
   const dataContract = buildContractForIdentity(context.identityId, identityNonce);
   const publishedContract = await sdk.contracts.publish({
     dataContract,
-    identityKey: context.identityKey,
-    signer: context.signer,
+    identityKey: deployKey,
+    signer: deploySigner,
   });
   const publishedId = publishedContract.id.toString();
   const fetchedContract = await sdk.contracts.fetch(publishedId);

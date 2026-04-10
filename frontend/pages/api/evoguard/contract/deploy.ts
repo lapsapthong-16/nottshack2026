@@ -28,10 +28,16 @@ export default async function handler(
     const contract = await deployEvoguardContract();
 
     return res.status(200).json({ ok: true, contract });
-  } catch (error) {
+  } catch (error: any) {
+    // WasmSdkError has .message as a WASM getter (not enumerable)
+    const message =
+      error?.message
+      || (typeof error === "string" ? error : null)
+      || JSON.stringify(error);
+    console.error("Deploy contract error:", message, error);
     return res.status(400).json({
       ok: false,
-      error: error instanceof Error ? error.message : "Failed to deploy contract",
+      error: message || "Failed to deploy contract",
     });
   }
 }
