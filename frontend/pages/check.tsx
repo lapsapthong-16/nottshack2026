@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import Head from "next/head";
 import Header from "@/components/Header";
 
@@ -57,6 +57,101 @@ type ChunkResult = {
   findings: { file: string; risk: number; description: string }[];
 };
 
+// ─── Syntax highlighting ────────────────────────────────────────
+
+const JS_KEYWORDS = new Set([
+  "const", "let", "var", "function", "return", "if", "else", "for", "while",
+  "class", "new", "this", "import", "export", "default", "from", "require",
+  "module", "exports", "async", "await", "try", "catch", "throw", "typeof",
+  "instanceof", "in", "of", "switch", "case", "break", "continue", "do",
+  "yield", "delete", "void", "null", "undefined", "true", "false",
+  "extends", "super", "static", "get", "set",
+]);
+
+const JS_BUILTINS = new Set([
+  "console", "window", "document", "process", "Buffer", "Promise",
+  "JSON", "Math", "Array", "Object", "String", "Number", "Error",
+  "setTimeout", "setInterval", "fetch", "require", "module",
+  "Proxy", "Map", "Set", "RegExp", "Date",
+]);
+
+type TokenSpan = { text: string; className: string };
+
+function tokenizeLine(text: string): TokenSpan[] {
+  if (!text.trim()) return [{ text, className: "" }];
+
+  const spans: TokenSpan[] = [];
+  // Simple regex-based tokenizer
+  const regex = /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\/\/.*$|\/\*[\s\S]*?\*\/|\b\d+\.?\d*\b|[a-zA-Z_$][\w$]*|[^\s]|\s+)/g;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const token = match[0];
+
+    if (/^["'`]/.test(token)) {
+      spans.push({ text: token, className: "text-[#a3501a]" }); // strings — burnt orange
+    } else if (/^\/\//.test(token) || /^\/\*/.test(token)) {
+      spans.push({ text: token, className: "text-[#6a8a4a] italic" }); // comments — olive green
+    } else if (/^\d/.test(token)) {
+      spans.push({ text: token, className: "text-[#1a6fb5]" }); // numbers — blue
+    } else if (JS_KEYWORDS.has(token)) {
+      spans.push({ text: token, className: "text-[#8b3fad] font-medium" }); // keywords — purple
+    } else if (JS_BUILTINS.has(token)) {
+      spans.push({ text: token, className: "text-[#267f7a]" }); // builtins — teal
+    } else if (/^[{}()\[\];,.]$/.test(token)) {
+      spans.push({ text: token, className: "text-[#8a8580]" }); // punctuation — muted
+    } else {
+      spans.push({ text: token, className: "text-[#1a1a1a]" });
+    }
+  }
+
+  return spans.length > 0 ? spans : [{ text, className: "" }];
+}
+
+// ─── Markdown-like text renderer ─────────────────────────────────
+
+function RichText({ text, className = "" }: { text: string; className?: string }) {
+  if (!text) return null;
+
+  // Split on newlines and render paragraphs
+  const paragraphs = text.split(/\n\n|\n/);
+
+  return (
+    <div className={`space-y-2 ${className}`}>
+      {paragraphs.map((para, pi) => {
+        // Process inline markdown
+        const rendered = para
+          .replace(/`([^`]+)`/g, '<code class="rounded bg-[#ede8e1] px-1.5 py-0.5 text-[12px] font-mono text-[#8b3fad] border border-[#d6d0c8]">$1</code>')
+          .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-semibold text-[#1a1a1a]">$1</strong>')
+          .replace(/\*([^*]+)\*/g, '<em class="italic">$1</em>');
+
+        if (para.startsWith("✅") || para.startsWith("⚠️") || para.startsWith("⚖️")) {
+          return (
+            <p key={pi} className="text-sm font-medium leading-6" dangerouslySetInnerHTML={{ __html: rendered }} />
+          );
+        }
+
+        return (
+          <p key={pi} className="text-sm leading-6" dangerouslySetInnerHTML={{ __html: rendered }} />
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Risk badge ────────────────────────────────────────────────
+
+function RiskBadge({ risk }: { risk: number }) {
+  const color = risk >= 7 ? "bg-[#e85c5c]" : risk >= 4 ? "bg-[#d4a03c]" : "bg-[#4a9a4a]";
+  const label = risk >= 7 ? "HIGH" : risk >= 4 ? "MED" : "LOW";
+  return (
+    <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${color}`}>
+      <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/40" />
+      {label} {risk}
+    </span>
+  );
+}
+
 // --- Components ---
 
 function ActivityPanel({
@@ -79,145 +174,158 @@ function ActivityPanel({
       </h2>
       <div className="flex-1 space-y-3 px-4 pb-4">
         {steps.slice(0, visibleCount).map((step, i) => (
-          <div key={i}>
+          <div key={i} className="animate-fadeIn">
             {step.type === "phase" && (
-              <div>
-                <span className="text-[11px] font-medium text-[#a8a09a]">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#b8a9c8] animate-pulse" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8b6fad]">
                   phase
                 </span>
-                <p className="mt-0.5 text-sm text-[#1a1a1a]">{step.label}</p>
+                <div className="flex-1 h-px bg-[#e0dbd4]" />
               </div>
             )}
-            {step.type === "info" && (
-              <p className="text-sm text-[#6b6b6b]">{step.label}</p>
+            {step.type === "phase" && (
+              <p className="mt-1 ml-3.5 text-sm font-medium text-[#1a1a1a]">{step.label}</p>
             )}
+
+            {step.type === "info" && (
+              <div className="ml-3.5 flex items-start gap-2">
+                <span className="mt-1.5 text-[#a8a09a] text-[10px]">▸</span>
+                <p className="text-[13px] text-[#6b6b6b] leading-5">{step.label}</p>
+              </div>
+            )}
+
             {step.type === "filelist" && step.files && (
-              <div className="space-y-1 max-h-32 overflow-y-auto">
-                {step.files.map((f) => (
-                  <div key={f} className="flex items-center gap-2">
-                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1a1a1a]" />
-                    <span className="text-sm text-[#1a1a1a] truncate">{f}</span>
+              <div className="ml-3.5 space-y-0.5 max-h-32 overflow-y-auto rounded-md border border-[#e8e4de] bg-white/60 p-2">
+                {step.files.map((f, fi) => (
+                  <div key={`${fi}-${f}`} className="flex items-center gap-2 py-0.5">
+                    <span className="text-[10px] text-[#c8c0b8]">📄</span>
+                    <span className="text-[12px] font-mono text-[#4a4a4a] truncate">{f}</span>
                   </div>
                 ))}
               </div>
             )}
+
             {step.type === "flag" && step.flag && (
-              <div className={`rounded-lg border p-3 ${
+              <div className={`ml-3.5 rounded-lg border-l-[3px] p-3 ${
                 step.label === "verifier_flagged"
-                  ? "border-[#d5d5e8] bg-[#f5f5fd]"
-                  : "border-[#e8d5d5] bg-[#fdf5f5]"
+                  ? "border-l-[#6b5c94] bg-[#f5f3fa]"
+                  : "border-l-[#e85c5c] bg-[#fdf6f6]"
               }`}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-1.5">
                   <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
                     step.label === "verifier_flagged" ? "bg-[#6b5c94]" : "bg-[#e85c5c]"
                   }`}>
-                    {step.label === "verifier_flagged" ? "verifier" : "flagged"}
+                    {step.label === "verifier_flagged" ? "🔍 verifier" : "⚠ flagged"}
                   </span>
-                  <span className="rounded bg-[#e85c5c] px-1.5 py-0.5 text-[10px] font-bold text-white">
-                    risk {step.flag.risk}
-                  </span>
+                  <RiskBadge risk={step.flag.risk} />
                 </div>
-                <p className="mt-2 text-xs leading-5 text-[#5a4a4a]">
-                  {step.flag.file} — {step.flag.description}
+                <p className="text-[12px] font-mono text-[#4a4040] leading-5">
+                  <span className="font-semibold text-[#1a1a1a]">{step.flag.file}</span>
                 </p>
+                <RichText text={step.flag.description} className="mt-1 text-[12px] text-[#5a4a4a]" />
               </div>
             )}
+
             {step.type === "verification" && (
-              <div className={`rounded-lg border p-3 ${
+              <div className={`ml-3.5 rounded-lg border-l-[3px] p-3 ${
                 step.label === "false_positive"
-                  ? "border-[#d0e8d8] bg-[#f0faf5]"
-                  : "border-[#e8d5d5] bg-[#fdf5f5]"
+                  ? "border-l-[#4a9a4a] bg-[#f5faf8]"
+                  : "border-l-[#d47a3c] bg-[#fdf9f5]"
               }`}>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 mb-1.5">
                   <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
-                    step.label === "false_positive" ? "bg-[#3d946b]" : "bg-[#c85c3c]"
+                    step.label === "false_positive" ? "bg-[#4a9a4a]" : "bg-[#d47a3c]"
                   }`}>
                     {step.label === "false_positive" ? "✓ false positive" : "⚠ missed threat"}
                   </span>
                 </div>
-                <p className="mt-2 text-xs leading-5 text-[#4a4a4a]">
-                  {step.detail}
-                </p>
+                <RichText text={step.detail ?? ""} className="text-[12px] text-[#4a4a4a]" />
               </div>
             )}
+
             {step.type === "agent_verdict" && (
-              <div className={`rounded-lg border p-3 ${
+              <div className={`ml-3.5 rounded-lg border p-3 ${
                 step.verdict === "SAFE"
-                  ? "border-[#d0e8d0] bg-[#f0faf0]"
+                  ? "border-[#c0dcc0] bg-[#f5faf5]"
                   : step.verdict === "MALICIOUS"
-                    ? "border-[#e8d0d0] bg-[#faf0f0]"
-                    : "border-[#e8e0d0] bg-[#faf8f0]"
+                    ? "border-[#dcc0c0] bg-[#faf5f5]"
+                    : "border-[#dcd8c0] bg-[#fafaf5]"
               }`}>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="rounded bg-[#6b5c94] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                     {step.agent}
                   </span>
                   <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
-                    step.verdict === "SAFE" ? "bg-[#2d7a2d]"
+                    step.verdict === "SAFE" ? "bg-[#4a9a4a]"
                       : step.verdict === "MALICIOUS" ? "bg-[#e85c5c]"
-                        : "bg-[#c89b3c]"
+                        : "bg-[#d4a03c]"
                   }`}>
                     {step.verdict}
                   </span>
                   {step.riskScore !== undefined && (
-                    <span className="text-xs font-bold text-[#6b6b6b]">
-                      Risk: {step.riskScore}/10
-                    </span>
+                    <RiskBadge risk={step.riskScore} />
                   )}
                   {step.agreesWithAgent1 !== undefined && (
-                    <span className={`text-[10px] font-bold ${
-                      step.agreesWithAgent1 ? "text-[#2d7a2d]" : "text-[#c85c3c]"
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      step.agreesWithAgent1
+                        ? "bg-[#e8f5e8] text-[#2d7a2d]"
+                        : "bg-[#f5e8e8] text-[#c85c3c]"
                     }`}>
                       {step.agreesWithAgent1 ? "✓ Agrees" : "✗ Disagrees"}
                     </span>
                   )}
                 </div>
-                <p className="text-xs leading-5 text-[#4a4a4a]">
-                  {step.summary}
-                </p>
+                <RichText text={step.summary ?? ""} className="text-[12px] text-[#4a4a4a]" />
+              </div>
+            )}
+
+            {step.type === "triage" && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#d4a03c] animate-pulse" />
+                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#b89830]">
+                  triage
+                </span>
+                <div className="flex-1 h-px bg-[#e0dbd4]" />
               </div>
             )}
             {step.type === "triage" && (
-              <div>
-                <span className="text-[11px] font-medium text-[#a8a09a]">
-                  triage
-                </span>
-                <p className="mt-0.5 text-sm text-[#6b6b6b]">{step.label}</p>
-              </div>
+              <p className="mt-1 ml-3.5 text-[13px] text-[#6b6b6b]">{step.label}</p>
             )}
+
             {step.type === "verdict" && (
-              <div className={`rounded-lg border p-3 ${
+              <div className={`rounded-xl border-2 p-4 shadow-sm ${
                 step.verdict === "SAFE"
-                  ? "border-[#d0e8d0] bg-[#f0faf0]"
+                  ? "border-[#4a9a4a]/30 bg-gradient-to-br from-[#f0faf0] to-[#e8f5e8]"
                   : step.verdict === "MALICIOUS"
-                    ? "border-[#e8d0d0] bg-[#faf0f0]"
-                    : "border-[#e8e0d0] bg-[#faf8f0]"
+                    ? "border-[#e85c5c]/30 bg-gradient-to-br from-[#faf0f0] to-[#f5e8e8]"
+                    : "border-[#d4a03c]/30 bg-gradient-to-br from-[#fafaf0] to-[#f5f0e8]"
               }`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
-                    step.verdict === "SAFE"
-                      ? "bg-[#2d7a2d]"
-                      : step.verdict === "MALICIOUS"
-                        ? "bg-[#e85c5c]"
-                        : "bg-[#c89b3c]"
+                <div className="flex items-center gap-2 mb-3 flex-wrap">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8a8580]">
+                    {step.label}
+                  </span>
+                  <span className={`rounded-md px-3 py-1 text-[11px] font-bold uppercase text-white shadow-sm ${
+                    step.verdict === "SAFE" ? "bg-[#4a9a4a]"
+                      : step.verdict === "MALICIOUS" ? "bg-[#e85c5c]"
+                        : "bg-[#d4a03c]"
                   }`}>
                     {step.verdict}
                   </span>
                   {step.riskScore !== undefined && (
-                    <span className="text-xs font-bold text-[#6b6b6b]">
-                      Risk: {step.riskScore}/10
+                    <span className="text-sm font-bold text-[#4a4a4a]">
+                      Risk Score: {step.riskScore}/10
                     </span>
                   )}
                 </div>
-                <p className="text-xs leading-5 text-[#4a4a4a]">
-                  {step.summary}
-                </p>
+                <RichText text={step.summary ?? ""} className="text-[#4a4a4a]" />
               </div>
             )}
+
             {step.type === "done" && (
-              <div className="rounded-lg border border-[#d0e8d0] bg-[#f0faf0] p-3">
-                <p className="text-sm font-medium text-[#2d7a2d]">
-                  {step.label}
+              <div className="rounded-xl border border-[#c0dcc0] bg-gradient-to-r from-[#f0faf0] to-[#e8f5e8] p-3 text-center">
+                <p className="text-sm font-semibold text-[#2d7a2d]">
+                  ✅ {step.label}
                 </p>
               </div>
             )}
@@ -242,8 +350,12 @@ function CodeViewer({
 }) {
   if (!fileView) {
     return (
-      <div className="flex h-full items-center justify-center text-[#a8a8a8]">
-        <p>Waiting for analysis results...</p>
+      <div className="flex h-full flex-col items-center justify-center bg-white text-[#a8a8a8]">
+        <div className="animate-pulse text-center">
+          <div className="text-4xl mb-3">🔍</div>
+          <p className="text-sm text-[#8a8580]">Waiting for analysis results...</p>
+          <p className="text-xs mt-1 text-[#a8a09a]">Code will appear here once files are scanned</p>
+        </div>
       </div>
     );
   }
@@ -255,13 +367,13 @@ function CodeViewer({
         <div className="flex flex-1 items-center overflow-x-auto">
           {allFileViews.map((fv, i) => (
             <button
-              key={fv.path}
+              key={`tab-${i}-${fv.path}`}
               type="button"
               onClick={() => onTabClick(i)}
-              className={`cursor-pointer border-r border-[#e0dbd4] px-4 py-2.5 text-sm transition ${
+              className={`cursor-pointer border-r border-[#e0dbd4] px-4 py-2.5 text-[13px] font-mono transition ${
                 i === activeIndex
-                  ? "bg-white font-medium text-[#1a1a1a]"
-                  : "text-[#8a8580] hover:bg-[#ede8e1]"
+                  ? "bg-white font-medium text-[#1a1a1a] border-b-2 border-b-[#8b6fad]"
+                  : "text-[#8a8580] hover:bg-[#ede8e1] border-b-2 border-b-transparent"
               }`}
             >
               {fv.name}
@@ -270,18 +382,18 @@ function CodeViewer({
         </div>
         {/* Tags */}
         <div className="flex items-center gap-1.5 px-3">
-          {fileView.tags.map((tag) => {
+          {fileView.tags.map((tag, ti) => {
             const colors: Record<string, string> = {
               DOM_MANIPULATION: "bg-[#f0dde0] text-[#943d4a]",
               NETWORK: "bg-[#dde8f0] text-[#3d5e94]",
               CRYPTO: "bg-[#e8e0f0] text-[#6b3d94]",
-              SAFE: "bg-[#d0e8d0] text-[#2d7a2d]",
-              SUSPICIOUS: "bg-[#e8e0d0] text-[#94763d]",
+              SAFE: "bg-[#d8eed8] text-[#2d7a2d]",
+              SUSPICIOUS: "bg-[#f0e8d0] text-[#94763d]",
               MALICIOUS: "bg-[#f0dde0] text-[#943d4a]",
             };
             return (
               <span
-                key={tag}
+                key={`tag-${ti}-${tag}`}
                 className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${colors[tag] ?? "bg-[#e8e4de] text-[#6b6b6b]"}`}
               >
                 {tag}
@@ -291,40 +403,52 @@ function CodeViewer({
         </div>
       </div>
 
-      {/* Code area */}
+      {/* Code area — light theme */}
       <div className="flex-1 overflow-auto bg-white">
-        <pre className="text-[13px] leading-6">
+        <pre className="text-[13px] leading-7 py-2">
           {fileView.lines.map((line) => (
             <div
               key={line.num}
               className={`flex ${
                 line.highlighted
                   ? "bg-[#fde8e8] border-l-2 border-[#e85c5c]"
-                  : "border-l-2 border-transparent"
+                  : "border-l-2 border-transparent hover:bg-[#f7f3ee]"
               }`}
             >
-              <span className="inline-block w-10 flex-shrink-0 select-none pr-3 text-right text-[#b8b3ac]">
+              <span className="inline-block w-12 flex-shrink-0 select-none pr-4 text-right text-[12px] text-[#b8b3ac]">
                 {line.num}
               </span>
-              <code className="text-[#1a1a1a]">{line.text}</code>
+              <code>
+                {tokenizeLine(line.text).map((span, si) => (
+                  <span key={si} className={span.className}>{span.text}</span>
+                ))}
+              </code>
             </div>
           ))}
         </pre>
       </div>
 
-      {/* Findings */}
+      {/* Findings — warm panel */}
       <div className="border-t border-[#e0dbd4] bg-[#faf8f5] px-5 py-4 overflow-y-auto max-h-56">
-        <div className="space-y-2">
+        <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#8a8580] mb-3">
+          Findings
+        </h3>
+        <div className="space-y-2.5">
           {fileView.findings.map((f, i) => (
-            <div key={i} className="flex gap-2 text-sm leading-6 text-[#3a3a3a]">
-              <span className="mt-0.5 flex-shrink-0 text-[#b8a9c8]">&gt;</span>
-              <span>{f}</span>
+            <div key={i} className="flex gap-2.5 text-[13px] leading-6 text-[#3a3a3a]">
+              <span className="mt-0.5 flex-shrink-0 text-[#8b6fad]">▸</span>
+              <RichText text={f} className="text-[#3a3a3a]" />
             </div>
           ))}
         </div>
-        <p className="mt-4 text-sm leading-6 text-[#4a4a4a]">
-          {fileView.summary}
-        </p>
+        {fileView.summary && (
+          <div className="mt-4 border-t border-[#e0dbd4] pt-3">
+            <h3 className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#8a8580] mb-2">
+              Summary
+            </h3>
+            <RichText text={fileView.summary} className="text-[13px] text-[#4a4a4a]" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -347,32 +471,29 @@ function FilesPanel({
         </h2>
       </div>
       <div className="flex-1 space-y-0.5 px-4 pb-4 overflow-y-auto">
-        {files.map((f) => (
+        {files.map((f, fi) => (
           <button
-            key={f.path}
+            key={`file-${fi}-${f.path}`}
             type="button"
             onClick={() => !f.isDir && onFileClick(f.path)}
             className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-[#e8e4de] ${
               f.isDir ? "cursor-default" : ""
             } ${f.isDir ? "pl-2" : "pl-5"}`}
           >
+            <span className="text-[10px]">{f.isDir ? "📁" : "📄"}</span>
             {f.risk !== null && (
               <span className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-                f.risk >= 7 ? "bg-[#e85c5c]" : f.risk >= 4 ? "bg-[#c89b3c]" : "bg-[#2d7a2d]"
+                f.risk >= 7 ? "bg-[#e85c5c]" : f.risk >= 4 ? "bg-[#d4a03c]" : "bg-[#4a9a4a]"
               }`} />
             )}
-            <span className="flex-1 text-sm text-[#1a1a1a] truncate">{f.name}</span>
+            <span className="flex-1 text-[13px] font-mono text-[#1a1a1a] truncate">{f.name}</span>
             {f.isEntry && (
               <span className="rounded bg-[#e8e4de] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#8a8580]">
                 entry
               </span>
             )}
             {f.risk !== null && (
-              <span className={`text-xs font-bold ${
-                f.risk >= 7 ? "text-[#e85c5c]" : f.risk >= 4 ? "text-[#c89b3c]" : "text-[#2d7a2d]"
-              }`}>
-                {f.risk}
-              </span>
+              <RiskBadge risk={f.risk} />
             )}
           </button>
         ))}
@@ -407,7 +528,6 @@ export default function Check() {
 
   // Build file views from chunk analysis findings
   function buildFileViewFromFinding(finding: { file: string; risk: number; description: string }, sourceChunk?: string) {
-    // Try to extract relevant code lines from the chunk
     const lines: CodeLine[] = [];
     if (sourceChunk) {
       const fileMarker = `--- FILE: ${finding.file} ---`;
@@ -416,7 +536,7 @@ export default function Check() {
         const afterMarker = sourceChunk.slice(startIdx + fileMarker.length);
         const endIdx = afterMarker.indexOf("\n--- FILE:");
         const fileContent = endIdx !== -1 ? afterMarker.slice(0, endIdx) : afterMarker;
-        const codeLines = fileContent.split("\n").slice(0, 30); // Show first 30 lines
+        const codeLines = fileContent.split("\n").slice(0, 30);
         codeLines.forEach((text, i) => {
           lines.push({ num: i + 1, text });
         });
@@ -480,7 +600,6 @@ export default function Check() {
 
           buffer += decoder.decode(value, { stream: true });
 
-          // Parse SSE events
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
 
@@ -500,7 +619,6 @@ export default function Check() {
 
                 case "filelist":
                   addStep({ type: "filelist", label: event.label, files: event.files });
-                  // Build file entries from the file list
                   setFiles(
                     (event.files ?? []).map((f: string) => ({
                       name: f.split("/").pop() ?? f,
@@ -512,8 +630,7 @@ export default function Check() {
                   break;
 
                 case "flag":
-                  addStep({ type: "flag", label: "flagged", flag: event.flag });
-                  // Update file risk
+                  addStep({ type: "flag", label: event.label ?? "flagged", flag: event.flag });
                   setFiles((prev) =>
                     prev.map((f) =>
                       f.path === event.flag.file || f.path === `/${event.flag.file}`
@@ -527,11 +644,9 @@ export default function Check() {
                   const result = event as ChunkResult;
                   chunkResults.current.push(result);
 
-                  // Build file views from findings
                   if (result.findings && result.findings.length > 0) {
                     const newViews = result.findings.map((f: any) => buildFileViewFromFinding(f));
                     setFileViews((prev) => {
-                      // Deduplicate by path
                       const existing = new Set(prev.map((v) => v.path));
                       const unique = newViews.filter((v: FileView) => !existing.has(v.path));
                       return [...prev, ...unique];
@@ -648,6 +763,16 @@ export default function Check() {
       <Head>
         <title>Validus — Package Security Audit</title>
       </Head>
+
+      <style jsx global>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+      `}</style>
 
       <div className="flex h-screen flex-col bg-[#f0ebe4] text-[#1a1a1a]">
         <Header

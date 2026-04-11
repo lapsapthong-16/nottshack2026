@@ -144,7 +144,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     // ── Step 3: Copilot analysis ──
-    sendEvent("phase", { label: "Analyzing source files with Copilot AI" });
+    sendEvent("phase", { label: "Analyzing source files with Audit Agent" });
 
     const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
     const client = new CopilotClient();
