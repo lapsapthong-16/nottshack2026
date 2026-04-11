@@ -1,5 +1,5 @@
+import { EvoSDK } from '@dashevo/evo-sdk';
 import { createClient } from './setupDashClient.mjs';
-import { Identifier } from '@dashevo/evo-sdk';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,9 +13,6 @@ dotenv.config({ path: path.join(__dirname, '.env') });
 const network = process.env.NETWORK || 'testnet';
 const contractId = process.env.EVOGUARD_CONTRACT_ID;
 
-/**
- * Test script to query documents from the EvoGuard contract.
- */
 async function testQuery() {
   if (!contractId) {
     console.error('❌ Error: EVOGUARD_CONTRACT_ID is not set in .env');
@@ -27,34 +24,64 @@ async function testQuery() {
   console.log(`Contract ID: ${contractId}`);
   console.log(`------------------------------------`);
 
-  console.log('Connecting to Dash Platform...');
+  console.log('Connecting to Dash Platform (Trusted Node)...');
   const sdk = await createClient(network);
 
   try {
-    console.log('Querying "auditReport" documents...');
+    console.log('Fetching contract metadata...');
+    const contract = await sdk.contracts.fetch(contractId);
+    if (!contract) {
+      throw new Error(`Contract ${contractId} not found on-chain.`);
+    }
+    const contractJson = contract.toJSON(1);
     
-    /**
-     * Fetching documents from the contract.
-     * In JS-SDK 3.1.0-dev, we use an options object.
-     * Some versions require 'where' to be an array even if empty.
-     */
-    const result = await sdk.documents.get({
-      dataContractId: Identifier.fromBase58(contractId),
-      documentTypeName: 'auditReport',
-      where: [],
-    });
+    // Check document types
+    const docsObj = contractJson.documentSchemas || contractJson.documents || contractJson.documentTypes || {};
+    const docTypes = Object.keys(docsObj);
+    console.log('Document types defined in contract:', docTypes);
 
-    // Handle different possible return shapes (array or object with documents array)
-    const documents = Array.isArray(result) ? result : (result?.documents || []);
+    let documents = [];
+    const ownerId = process.env.DASH_IDENTITY_ID || contractJson.ownerId;
 
-    if (!result || documents.length === 0) {
-      console.log('ℹ️ No documents found for this contract.');
+    console.log(`\n--- Test 1: Document Query by Owner Index ---`);
+    try {
+      const result = await sdk.documents.query({
+        dataContractId: contractId,
+        documentTypeName: 'auditReport',
+        where: [['$ownerId', '==', ownerId]],
+        orderBy: [['$ownerId', 'asc']],
+        limit: 50,
+      });
+
+      documents = [...result.values()].filter(Boolean);
+      console.log(`Query (by owner) returned ${documents.length} document(s).`);
+    } catch (queryError) {
+      console.error('❌ Query (by owner) failed:', queryError.message);
+    }
+
+    if (documents.length > 0) {
+      console.log(`\n--- Test 2: Fetch First Document by ID ---`);
+      try {
+        const firstDocId = documents[0].id.toString();
+        const doc = await sdk.documents.get(contractId, 'auditReport', firstDocId);
+
+        if (doc) {
+          console.log(`✅ get(ID) succeeded for ${firstDocId}`);
+        } else {
+          console.log(`❌ get(ID) returned nothing for ${firstDocId}`);
+        }
+      } catch (e) {
+        console.error('❌ get(ID) failed:', e.message);
+      }
+    }
+
+    if (documents.length === 0) {
+      console.log('\nℹ️ No documents found even after multiple attempts.');
     } else {
-      console.log(`✅ Found ${documents.length} document(s).`);
+      console.log(`\n✅ SUCCESS! Found ${documents.length} document(s).`);
 
       documents.forEach((doc, index) => {
-        // Newer SDKs might use toObject() or properties getter
-        const props = typeof doc.toObject === 'function' ? doc.toObject().properties : doc.properties;
+        const props = typeof doc.toJSON === 'function' ? doc.toJSON() : {};
         console.log(`\n[${index + 1}] Document ID: ${doc.id.toString()}`);
         console.log(`    Owner ID:    ${doc.ownerId.toString()}`);
         console.log(`    Package:     ${props.pkgName} (v${props.version})`);
@@ -65,9 +92,7 @@ async function testQuery() {
     }
 
   } catch (error) {
-    console.error('❌ Query failed:', error.message || error);
-    // If you see "Cannot read properties of undefined (reading 'length')", 
-    // it may be an SDK-specific issue with the query parameters or the contract state.
+    console.error('❌ Fatal error:', error.message || error);
   } finally {
     process.exit(0);
   }
