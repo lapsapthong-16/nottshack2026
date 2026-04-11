@@ -102,7 +102,7 @@ export default function Report() {
   return (
     <>
       <Head>
-        <title>NpmGuard — Public Audit Reports</title>
+        <title>Validus — Public Audit Reports</title>
       </Head>
 
       <div className="min-h-screen bg-[#f0ebe4] text-[#1a1a1a]">

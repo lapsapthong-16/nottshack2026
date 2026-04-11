@@ -446,7 +446,7 @@ export default function Check() {
   return (
     <>
       <Head>
-        <title>NpmGuard — Package Security Audit</title>
+        <title>Validus — Package Security Audit</title>
       </Head>
 
       <div className="flex h-screen flex-col bg-[#f0ebe4] text-[#1a1a1a]">

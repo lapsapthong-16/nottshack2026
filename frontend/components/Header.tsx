@@ -18,10 +18,10 @@ export default function Header({
   return (
     <header className="flex items-center border-b border-[#e0dbd4] bg-[#f0ebe4] px-6 py-3">
       <Link
-        href="/landing"
+        href="/"
         className="text-base font-bold tracking-tight text-[#1a1a1a] no-underline"
       >
-        npmguard
+        Validus
       </Link>
 
       {/* Nav links */}

@@ -46,8 +46,9 @@ The app includes:
 
 ### UI surfaces
 
-- `/` renders the EvoGuard admin page
-- `/evoguard` renders the same EvoGuard admin page
+- `/` renders the Validus landing page
+- `/test` renders the EvoGuard admin page
+- `/report` renders the public audit reports page
 
 ### API routes
 
