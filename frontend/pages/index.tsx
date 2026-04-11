@@ -1,16 +1,117 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Header from "@/components/Header";
+
+type NpmResult = {
+  name: string;
+  version: string;
+  description: string;
+  publisher: string;
+};
 
 export default function Landing() {
   const router = useRouter();
   const [packageName, setPackageName] = useState("");
   const [version, setVersion] = useState("latest");
 
-  const examples = ["event-stream", "ua-parser-js", "colors"];
+  // ── Package search autocomplete state ──
+  const [searchResults, setSearchResults] = useState<NpmResult[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
 
+  // ── Version dropdown state ──
+  const [versions, setVersions] = useState<string[]>(["latest"]);
+  const [showVersionDropdown, setShowVersionDropdown] = useState(false);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const versionRef = useRef<HTMLDivElement>(null);
+
+  const examples = ["event-stream", "ua-parser-js", "colors"];
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  // ── Debounced npm search ──
+  const searchNpm = useCallback(async (query: string) => {
+    if (!query.trim() || query.trim().length < 2) {
+      setSearchResults([]);
+      setShowDropdown(false);
+      return;
+    }
+    setIsSearching(true);
+    try {
+      const res = await fetch(`/api/npm/search?q=${encodeURIComponent(query.trim())}`);
+      const data = await res.json();
+      setSearchResults(data.results ?? []);
+      setShowDropdown((data.results ?? []).length > 0);
+    } catch {
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  function handlePackageInput(value: string) {
+    setPackageName(value);
+    // Reset versions when package name changes
+    setVersions(["latest"]);
+    setVersion("latest");
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => searchNpm(value), 300);
+  }
+
+  // ── Fetch versions for a selected package ──
+  async function fetchVersions(name: string) {
+    setIsLoadingVersions(true);
+    try {
+      const res = await fetch(`/api/npm/versions?name=${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (data.versions && data.versions.length > 0) {
+        // Prepend "latest" label if not already there
+        const versionList = data.versions.includes(data.latest)
+          ? [`latest (${data.latest})`, ...data.versions.filter((v: string) => v !== data.latest)]
+          : ["latest", ...data.versions];
+        setVersions(versionList);
+        setVersion("latest");
+      }
+    } catch {
+      setVersions(["latest"]);
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  }
+
+  function selectPackage(pkg: NpmResult) {
+    setPackageName(pkg.name);
+    setShowDropdown(false);
+    setSearchResults([]);
+    fetchVersions(pkg.name);
+  }
+
+  function selectVersion(v: string) {
+    // If it's the "latest (x.y.z)" label, extract version or keep "latest"
+    if (v.startsWith("latest")) {
+      setVersion("latest");
+    } else {
+      setVersion(v);
+    }
+    setShowVersionDropdown(false);
+  }
+
+  // ── Close dropdowns on outside click ──
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+      if (versionRef.current && !versionRef.current.contains(e.target as Node)) {
+        setShowVersionDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   async function handleAudit() {
     if (!packageName.trim() || isProcessingPayment) return;
@@ -113,7 +214,7 @@ export default function Landing() {
   function handleExampleClick(name: string) {
     setPackageName(name);
     setVersion("latest");
-    void router.push({ pathname: "/check", query: { name } });
+    fetchVersions(name);
   }
 
   return (
@@ -145,23 +246,89 @@ export default function Landing() {
               e.preventDefault();
               handleAudit();
             }}
-            className="mt-10 flex items-center gap-0 overflow-hidden rounded-xl border border-[#d6d0c8] bg-white shadow-sm"
+            className="relative mt-10 flex items-center gap-0 rounded-xl border border-[#d6d0c8] bg-white shadow-sm"
           >
-            <input
-              type="text"
-              placeholder="package name"
-              value={packageName}
-              onChange={(e) => setPackageName(e.target.value)}
-              className="w-44 border-none bg-transparent px-5 py-3.5 text-sm text-[#1a1a1a] placeholder-[#a8a8a8] outline-none sm:w-56"
-            />
+            {/* Package name input with autocomplete */}
+            <div ref={searchRef} className="relative">
+              <input
+                id="package-search"
+                type="text"
+                placeholder="package name"
+                autoComplete="off"
+                value={packageName}
+                onChange={(e) => handlePackageInput(e.target.value)}
+                onFocus={() => { if (searchResults.length > 0) setShowDropdown(true); }}
+                className="w-44 rounded-l-xl border-none bg-transparent px-5 py-3.5 text-sm text-[#1a1a1a] placeholder-[#a8a8a8] outline-none sm:w-56"
+              />
+
+              {/* Package search dropdown */}
+              {showDropdown && (
+                <div className="absolute left-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-lg border border-[#d6d0c8] bg-white shadow-lg">
+                  {isSearching ? (
+                    <div className="px-4 py-3 text-xs text-[#a8a8a8]">Searching npm...</div>
+                  ) : (
+                    searchResults.map((pkg, i) => (
+                      <button
+                        key={pkg.name}
+                        type="button"
+                        onClick={() => selectPackage(pkg)}
+                        className="flex w-full cursor-pointer flex-col gap-0.5 border-none bg-transparent px-4 py-2.5 text-left transition hover:bg-[#f5f0ea]"
+                        style={i < searchResults.length - 1 ? { borderBottom: "1px solid #eee" } : {}}
+                      >
+                        <span className="text-sm font-medium text-[#1a1a1a]">
+                          {pkg.name}
+                          <span className="ml-2 text-xs font-normal text-[#a8a8a8]">
+                            v{pkg.version}
+                          </span>
+                        </span>
+                        <span className="truncate text-xs text-[#888]">
+                          {pkg.description || "(no description)"}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="h-6 w-px bg-[#d6d0c8]" />
-            <input
-              type="text"
-              placeholder="latest"
-              value={version}
-              onChange={(e) => setVersion(e.target.value)}
-              className="w-20 border-none bg-transparent px-4 py-3.5 text-sm text-[#1a1a1a] placeholder-[#a8a8a8] outline-none sm:w-24"
-            />
+
+            {/* Version selector dropdown */}
+            <div ref={versionRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setShowVersionDropdown((v) => !v)}
+                disabled={isLoadingVersions}
+                className="flex w-24 cursor-pointer items-center justify-between border-none bg-transparent px-4 py-3.5 text-sm text-[#1a1a1a] outline-none sm:w-28"
+              >
+                <span className={version === "latest" ? "text-[#a8a8a8]" : ""}>
+                  {isLoadingVersions ? "..." : version}
+                </span>
+                <svg width="10" height="6" viewBox="0 0 10 6" fill="none" className="ml-1 flex-shrink-0">
+                  <path d="M1 1L5 5L9 1" stroke="#a8a8a8" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </button>
+
+              {showVersionDropdown && versions.length > 0 && (
+                <div className="absolute left-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-[#d6d0c8] bg-white shadow-lg">
+                  {versions.map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => selectVersion(v)}
+                      className={`flex w-full cursor-pointer items-center border-none bg-transparent px-4 py-2.5 text-left text-sm transition hover:bg-[#f5f0ea] ${
+                        (v === version || (v.startsWith("latest") && version === "latest"))
+                          ? "font-medium text-[#8b6fad]"
+                          : "text-[#1a1a1a]"
+                      }`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               type="submit"
               disabled={isProcessingPayment}
