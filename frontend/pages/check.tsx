@@ -20,10 +20,13 @@ type Flag = {
 };
 
 type ActivityStep = {
-  type: "phase" | "info" | "filelist" | "flag" | "triage" | "done";
+  type: "phase" | "info" | "filelist" | "flag" | "triage" | "done" | "verdict";
   label: string;
   files?: string[];
   flag?: Flag;
+  verdict?: string;
+  riskScore?: number;
+  summary?: string;
 };
 
 type CodeLine = {
@@ -41,133 +44,14 @@ type FileView = {
   summary: string;
 };
 
-// --- Simulated audit data ---
-
-function buildSimulatedAudit(pkgName: string) {
-  const files: FileEntry[] = [
-    { name: "lib/", path: "lib/", risk: null, isDir: true },
-    { name: "drainer.js", path: "lib/drainer.js", risk: 10 },
-    { name: "modal.html", path: "modal.html", risk: null },
-    { name: "index.js", path: "index.js", risk: 10, isEntry: true },
-    { name: "package.json", path: "package.json", risk: null },
-  ];
-
-  const fileViews: FileView[] = [
-    {
-      name: "lib/drainer.js",
-      path: "lib/drainer.js",
-      tags: ["DOM_MANIPULATION", "NETWORK", "CRYPTO"],
-      lines: [
-        { num: 1, text: 'const SAFE_TEST_MODE = true;' },
-        { num: 2, text: '' },
-        { num: 3, text: 'const ERC20_APPROVE_SELECTOR = "0x095ea7b3";' },
-        { num: 4, text: 'const MAX_UINT256 =' },
-        { num: 5, text: '  "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";' },
-        { num: 6, text: '' },
-        { num: 7, text: 'const DRAINER_ADDRESS = "0xDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF";', highlighted: true },
-        { num: 8, text: '' },
-        { num: 9, text: 'class Drainer {' },
-        { num: 10, text: '  constructor(options = {}) {' },
-        { num: 11, text: '    this.targetAddress =' },
-        { num: 12, text: '      options.targetAddress || DRAINER_ADDRESS;' },
-        { num: 13, text: '    this.chainId = options.chainId || 1;' },
-        { num: 14, text: '    this.originalProvider = null;' },
-        { num: 15, text: '    this.proxy = null;' },
-        { num: 16, text: '    this.interceptedTxs = [];' },
-        { num: 17, text: '  }' },
-        { num: 18, text: '' },
-        { num: 19, text: '  hookProvider(provider) {' },
-        { num: 20, text: '    this.originalProvider = provider;' },
-        { num: 21, text: '' },
-        { num: 22, text: '    this.proxy = new Proxy(provider, {' },
-        { num: 23, text: '      get: (target, prop) => {' },
-        { num: 24, text: '        if (prop === "request") {' },
-        { num: 25, text: '          return (args) => this._interceptRequest(target, args);' },
-        { num: 26, text: '        }' },
-        { num: 27, text: '        if (prop === "send") {' },
-        { num: 28, text: '          return (method, params) =>' },
-        { num: 29, text: '            this._interceptSend(target, method, params);' },
-        { num: 30, text: '        }' },
-      ],
-      findings: [
-        "Hardcoded attacker address `DRAINER_ADDRESS` (0xDEADBEEF...) used as the spender in all ERC20 approve calls",
-        "Proxy wraps the real Ethereum provider and replaces `window.ethereum` with the malicious proxy (L40), intercepting all wallet interactions",
-        "`_interceptRequest` intercepts `eth_sendTransaction`, `eth_sign`, `personal_sign`, `eth_accounts`, and `eth_requestAccounts` — silently triggering drain on account discovery (L66)",
-      ],
-      summary:
-        "This file implements a crypto wallet drainer that hijacks the browser's `window.ethereum` provider via a Proxy to intercept all wallet transactions and silently inject ERC20 `approve()` calls granting unlimited token spending allowance to a hardcoded attacker-controlled address, while also displaying a fake \"Connect Your Wallet\" modal to deceive users.",
-    },
-    {
-      name: "index.js",
-      path: "index.js",
-      tags: ["DOM_MANIPULATION", "NETWORK"],
-      lines: [
-        { num: 1, text: 'const Drainer = require("./lib/drainer");' },
-        { num: 2, text: '' },
-        { num: 3, text: 'const drainer = new Drainer();' },
-        { num: 4, text: '' },
-        { num: 5, text: 'module.exports = {' },
-        { num: 6, text: '  connect: () => {', highlighted: true },
-        { num: 7, text: '    if (typeof window !== "undefined" && window.ethereum) {' },
-        { num: 8, text: '      drainer.hookProvider(window.ethereum);' },
-        { num: 9, text: '      drainer.showModal();' },
-        { num: 10, text: '    }' },
-        { num: 11, text: '  },' },
-        { num: 12, text: '  disconnect: () => {' },
-        { num: 13, text: '    drainer.cleanup();' },
-        { num: 14, text: '  }' },
-        { num: 15, text: '};' },
-      ],
-      findings: [
-        "Exposes a `connect`/`disconnect` API that instantiates a Drainer object targeting a hardcoded Ethereum address",
-        "Hooks into the browser's Web3 provider (`window.ethereum`) and displays a popup",
-        "Behavior consistent with a cryptocurrency wallet drainer that intercepts and redirects blockchain transactions",
-      ],
-      summary:
-        'This file exposes a `connect`/`disconnect` API that instantiates a "Drainer" object targeting a hardcoded Ethereum address, hooks into the browser\'s Web3 provider (`window.ethereum`), and displays a popup — behavior consistent with a cryptocurrency wallet drainer that intercepts and redirects blockchain transactions.',
-    },
-  ];
-
-  const activitySteps: ActivityStep[] = [
-    { type: "phase", label: "Resolving package" },
-    { type: "phase", label: "Scanning package structure" },
-    {
-      type: "info",
-      label: `Found ${files.length} files across 1 directories`,
-    },
-    {
-      type: "phase",
-      label: "Analyzing source files",
-    },
-    {
-      type: "filelist",
-      label: "Source files",
-      files: ["index.js", "lib/drainer.js"],
-    },
-    {
-      type: "flag",
-      label: "flagged",
-      flag: {
-        file: "index.js",
-        risk: 10,
-        description: fileViews[1].summary,
-      },
-    },
-    {
-      type: "flag",
-      label: "flagged",
-      flag: {
-        file: "lib/drainer.js",
-        risk: 10,
-        description: fileViews[0].summary,
-      },
-    },
-    { type: "triage", label: "Analyzing source files..." },
-    { type: "done", label: "Audit complete" },
-  ];
-
-  return { files, fileViews, activitySteps, packageName: pkgName };
-}
+type ChunkResult = {
+  chunkIndex: number;
+  totalChunks: number;
+  verdict: string;
+  riskScore: number;
+  summary: string;
+  findings: { file: string; risk: number; description: string }[];
+};
 
 // --- Components ---
 
@@ -204,11 +88,11 @@ function ActivityPanel({
               <p className="text-sm text-[#6b6b6b]">{step.label}</p>
             )}
             {step.type === "filelist" && step.files && (
-              <div className="space-y-1">
+              <div className="space-y-1 max-h-32 overflow-y-auto">
                 {step.files.map((f) => (
                   <div key={f} className="flex items-center gap-2">
                     <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#1a1a1a]" />
-                    <span className="text-sm text-[#1a1a1a]">{f}</span>
+                    <span className="text-sm text-[#1a1a1a] truncate">{f}</span>
                   </div>
                 ))}
               </div>
@@ -236,6 +120,35 @@ function ActivityPanel({
                 <p className="mt-0.5 text-sm text-[#6b6b6b]">{step.label}</p>
               </div>
             )}
+            {step.type === "verdict" && (
+              <div className={`rounded-lg border p-3 ${
+                step.verdict === "SAFE"
+                  ? "border-[#d0e8d0] bg-[#f0faf0]"
+                  : step.verdict === "MALICIOUS"
+                    ? "border-[#e8d0d0] bg-[#faf0f0]"
+                    : "border-[#e8e0d0] bg-[#faf8f0]"
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
+                    step.verdict === "SAFE"
+                      ? "bg-[#2d7a2d]"
+                      : step.verdict === "MALICIOUS"
+                        ? "bg-[#e85c5c]"
+                        : "bg-[#c89b3c]"
+                  }`}>
+                    {step.verdict}
+                  </span>
+                  {step.riskScore !== undefined && (
+                    <span className="text-xs font-bold text-[#6b6b6b]">
+                      Risk: {step.riskScore}/10
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs leading-5 text-[#4a4a4a]">
+                  {step.summary}
+                </p>
+              </div>
+            )}
             {step.type === "done" && (
               <div className="rounded-lg border border-[#d0e8d0] bg-[#f0faf0] p-3">
                 <p className="text-sm font-medium text-[#2d7a2d]">
@@ -257,11 +170,19 @@ function CodeViewer({
   activeIndex,
   onTabClick,
 }: {
-  fileView: FileView;
+  fileView: FileView | null;
   allFileViews: FileView[];
   activeIndex: number;
   onTabClick: (i: number) => void;
 }) {
+  if (!fileView) {
+    return (
+      <div className="flex h-full items-center justify-center text-[#a8a8a8]">
+        <p>Waiting for analysis results...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       {/* File tabs */}
@@ -289,6 +210,9 @@ function CodeViewer({
               DOM_MANIPULATION: "bg-[#f0dde0] text-[#943d4a]",
               NETWORK: "bg-[#dde8f0] text-[#3d5e94]",
               CRYPTO: "bg-[#e8e0f0] text-[#6b3d94]",
+              SAFE: "bg-[#d0e8d0] text-[#2d7a2d]",
+              SUSPICIOUS: "bg-[#e8e0d0] text-[#94763d]",
+              MALICIOUS: "bg-[#f0dde0] text-[#943d4a]",
             };
             return (
               <span
@@ -299,12 +223,6 @@ function CodeViewer({
               </span>
             );
           })}
-          <button
-            type="button"
-            className="ml-2 cursor-pointer rounded border border-[#d6d0c8] bg-white px-2.5 py-1 text-[11px] font-medium text-[#6b6b6b] hover:bg-[#f7f3ee]"
-          >
-            files
-          </button>
         </div>
       </div>
 
@@ -363,7 +281,7 @@ function FilesPanel({
           Files ({fileCount})
         </h2>
       </div>
-      <div className="flex-1 space-y-0.5 px-4 pb-4">
+      <div className="flex-1 space-y-0.5 px-4 pb-4 overflow-y-auto">
         {files.map((f) => (
           <button
             key={f.path}
@@ -374,16 +292,20 @@ function FilesPanel({
             } ${f.isDir ? "pl-2" : "pl-5"}`}
           >
             {f.risk !== null && (
-              <span className="inline-block h-2 w-2 flex-shrink-0 rounded-full bg-[#e85c5c]" />
+              <span className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
+                f.risk >= 7 ? "bg-[#e85c5c]" : f.risk >= 4 ? "bg-[#c89b3c]" : "bg-[#2d7a2d]"
+              }`} />
             )}
-            <span className="flex-1 text-sm text-[#1a1a1a]">{f.name}</span>
+            <span className="flex-1 text-sm text-[#1a1a1a] truncate">{f.name}</span>
             {f.isEntry && (
               <span className="rounded bg-[#e8e4de] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#8a8580]">
                 entry
               </span>
             )}
             {f.risk !== null && (
-              <span className="text-xs font-bold text-[#e85c5c]">
+              <span className={`text-xs font-bold ${
+                f.risk >= 7 ? "text-[#e85c5c]" : f.risk >= 4 ? "text-[#c89b3c]" : "text-[#2d7a2d]"
+              }`}>
                 {f.risk}
               </span>
             )}
@@ -398,48 +320,222 @@ function FilesPanel({
 
 export default function Check() {
   const router = useRouter();
-  const { name } = router.query;
+  const { name, version } = router.query;
   const pkgName = typeof name === "string" ? name : "unknown-package";
+  const pkgVersion = typeof version === "string" ? version : "latest";
 
-  const audit = buildSimulatedAudit(pkgName);
+  const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [visibleSteps, setVisibleSteps] = useState(0);
+  const [files, setFiles] = useState<FileEntry[]>([]);
+  const [fileViews, setFileViews] = useState<FileView[]>([]);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
-  const [started, setStarted] = useState(false);
+  const [isAuditing, setIsAuditing] = useState(false);
+  const [finalVerdict, setFinalVerdict] = useState<{ verdict: string; riskScore: number; summary: string } | null>(null);
 
-  // Simulate AI activity feed
-  useEffect(() => {
-    if (!router.isReady) return;
-    setStarted(true);
-    setVisibleSteps(0);
+  // Accumulate chunk results to build file views
+  const chunkResults = useRef<ChunkResult[]>([]);
 
-    let step = 0;
-    const total = audit.activitySteps.length;
-    const delays = [600, 900, 500, 800, 400, 1200, 1200, 700, 500];
+  function addStep(step: ActivityStep) {
+    setActivitySteps((prev) => [...prev, step]);
+    setVisibleSteps((prev) => prev + 1);
+  }
 
-    function tick() {
-      step++;
-      setVisibleSteps(step);
-      if (step < total) {
-        setTimeout(tick, delays[step] ?? 600);
+  // Build file views from chunk analysis findings
+  function buildFileViewFromFinding(finding: { file: string; risk: number; description: string }, sourceChunk?: string) {
+    // Try to extract relevant code lines from the chunk
+    const lines: CodeLine[] = [];
+    if (sourceChunk) {
+      const fileMarker = `--- FILE: ${finding.file} ---`;
+      const startIdx = sourceChunk.indexOf(fileMarker);
+      if (startIdx !== -1) {
+        const afterMarker = sourceChunk.slice(startIdx + fileMarker.length);
+        const endIdx = afterMarker.indexOf("\n--- FILE:");
+        const fileContent = endIdx !== -1 ? afterMarker.slice(0, endIdx) : afterMarker;
+        const codeLines = fileContent.split("\n").slice(0, 30); // Show first 30 lines
+        codeLines.forEach((text, i) => {
+          lines.push({ num: i + 1, text });
+        });
       }
     }
 
-    const t = setTimeout(tick, delays[0] ?? 600);
-    return () => clearTimeout(t);
+    if (lines.length === 0) {
+      lines.push({ num: 1, text: `// File: ${finding.file}` });
+      lines.push({ num: 2, text: `// Risk: ${finding.risk}/10` });
+      lines.push({ num: 3, text: `// Finding: ${finding.description}` });
+    }
+
+    const tags = [finding.risk >= 7 ? "MALICIOUS" : finding.risk >= 4 ? "SUSPICIOUS" : "SAFE"];
+
+    return {
+      name: finding.file.split("/").pop() ?? finding.file,
+      path: finding.file,
+      tags,
+      lines,
+      findings: [finding.description],
+      summary: finding.description,
+    };
+  }
+
+  // Start the real audit
+  useEffect(() => {
+    if (!router.isReady || isAuditing) return;
+    if (pkgName === "unknown-package") return;
+
+    setIsAuditing(true);
+    setActivitySteps([]);
+    setVisibleSteps(0);
+    setFiles([]);
+    setFileViews([]);
+    chunkResults.current = [];
+
+    const controller = new AbortController();
+
+    async function runAudit() {
+      try {
+        const response = await fetch("/api/audit/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: pkgName, version: pkgVersion }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          addStep({ type: "info", label: `Error: Failed to start audit (${response.status})` });
+          setIsAuditing(false);
+          return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6));
+
+              switch (event.type) {
+                case "phase":
+                  addStep({ type: "phase", label: event.label });
+                  break;
+
+                case "info":
+                  addStep({ type: "info", label: event.label });
+                  break;
+
+                case "filelist":
+                  addStep({ type: "filelist", label: event.label, files: event.files });
+                  // Build file entries from the file list
+                  setFiles(
+                    (event.files ?? []).map((f: string) => ({
+                      name: f.split("/").pop() ?? f,
+                      path: f,
+                      risk: null,
+                      isEntry: f === "/index.js" || f === "/package.json",
+                    }))
+                  );
+                  break;
+
+                case "flag":
+                  addStep({ type: "flag", label: "flagged", flag: event.flag });
+                  // Update file risk
+                  setFiles((prev) =>
+                    prev.map((f) =>
+                      f.path === event.flag.file || f.path === `/${event.flag.file}`
+                        ? { ...f, risk: event.flag.risk }
+                        : f
+                    )
+                  );
+                  break;
+
+                case "chunk_result": {
+                  const result = event as ChunkResult;
+                  chunkResults.current.push(result);
+
+                  // Build file views from findings
+                  if (result.findings && result.findings.length > 0) {
+                    const newViews = result.findings.map((f: any) => buildFileViewFromFinding(f));
+                    setFileViews((prev) => {
+                      // Deduplicate by path
+                      const existing = new Set(prev.map((v) => v.path));
+                      const unique = newViews.filter((v: FileView) => !existing.has(v.path));
+                      return [...prev, ...unique];
+                    });
+                  }
+
+                  addStep({
+                    type: "info",
+                    label: `Chunk ${result.chunkIndex + 1}/${result.totalChunks}: ${result.verdict} (risk ${result.riskScore}/10)`,
+                  });
+                  break;
+                }
+
+                case "triage":
+                  addStep({ type: "triage", label: event.label });
+                  break;
+
+                case "final_verdict":
+                  setFinalVerdict({
+                    verdict: event.verdict,
+                    riskScore: event.riskScore,
+                    summary: event.summary,
+                  });
+                  addStep({
+                    type: "verdict",
+                    label: "Final Verdict",
+                    verdict: event.verdict,
+                    riskScore: event.riskScore,
+                    summary: event.summary,
+                  });
+                  break;
+
+                case "done":
+                  addStep({ type: "done", label: event.label });
+                  break;
+
+                case "error":
+                  addStep({ type: "info", label: `❌ ${event.message}` });
+                  break;
+              }
+            } catch {
+              // skip malformed events
+            }
+          }
+        }
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          addStep({ type: "info", label: `❌ Audit error: ${err.message}` });
+        }
+      } finally {
+        setIsAuditing(false);
+      }
+    }
+
+    runAudit();
+
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, pkgName]);
 
-  const progress = started
-    ? Math.min(100, Math.round((visibleSteps / audit.activitySteps.length) * 100))
-    : 0;
-
-  const filesScanned = Math.min(
-    audit.fileViews.length,
-    Math.floor((visibleSteps / audit.activitySteps.length) * audit.fileViews.length + 0.5)
-  );
+  const totalSteps = activitySteps.length || 1;
+  const progress = isAuditing
+    ? Math.min(90, Math.round((visibleSteps / Math.max(totalSteps, 8)) * 100))
+    : finalVerdict
+      ? 100
+      : 0;
 
   function handleFileClick(path: string) {
-    const idx = audit.fileViews.findIndex((fv) => fv.path === path);
+    const idx = fileViews.findIndex((fv) => fv.path === path);
     if (idx !== -1) setActiveFileIndex(idx);
   }
 
@@ -451,9 +547,9 @@ export default function Check() {
 
       <div className="flex h-screen flex-col bg-[#f0ebe4] text-[#1a1a1a]">
         <Header
-          packageName={pkgName}
-          filesScanned={filesScanned}
-          filesTotal={audit.fileViews.length}
+          packageName={`${pkgName}@${pkgVersion}`}
+          filesScanned={fileViews.length}
+          filesTotal={files.length}
           progress={progress}
         />
 
@@ -461,7 +557,7 @@ export default function Check() {
           {/* Left — Activity */}
           <aside className="w-80 flex-shrink-0 overflow-hidden border-r border-[#e0dbd4] bg-[#f7f3ee]">
             <ActivityPanel
-              steps={audit.activitySteps}
+              steps={activitySteps}
               visibleCount={visibleSteps}
             />
           </aside>
@@ -469,8 +565,8 @@ export default function Check() {
           {/* Center — Code viewer */}
           <main className="flex flex-1 flex-col overflow-hidden">
             <CodeViewer
-              fileView={audit.fileViews[activeFileIndex]}
-              allFileViews={audit.fileViews}
+              fileView={fileViews[activeFileIndex] ?? null}
+              allFileViews={fileViews}
               activeIndex={activeFileIndex}
               onTabClick={setActiveFileIndex}
             />
@@ -478,7 +574,7 @@ export default function Check() {
 
           {/* Right — Files */}
           <aside className="w-56 flex-shrink-0 overflow-hidden border-l border-[#e0dbd4] bg-[#f7f3ee]">
-            <FilesPanel files={audit.files} onFileClick={handleFileClick} />
+            <FilesPanel files={files} onFileClick={handleFileClick} />
           </aside>
         </div>
       </div>
