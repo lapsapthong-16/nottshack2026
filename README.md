@@ -177,10 +177,10 @@ DCAI L3 is the EVM-compatible execution layer where all financial and audit logi
 |---|---|
 | **Smart Contracts** | Solidity 0.8.x, Hardhat |
 | **Blockchain** | DCAI L3 (EVM Compatible), Dash Platform (Data Contracts) |
-| **Frontend** | Next.js 14, React, TypeScript |
-| **Styling** | Tailwind CSS |
+| **Frontend** | `next`, `react`, `typescript` |
+| **Styling** | `tailwindcss`, `@tailwindcss/postcss` |
 | **AI Agents** | Swarm Analysis, LLMs |
-| **Web3** | Ethers.js, Dash Platform SDK |
+| **Web3** | `ethers`, `@dashevo/evo-sdk`, `wagmi`, `viem` |
 | **Wallets** | OKX Wallet, Dash Platform Identity |
 
 ---
