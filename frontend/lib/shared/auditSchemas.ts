@@ -1,4 +1,4 @@
-export const SEVERITY_LEVELS = ["critical", "high", "medium", "low", "info"] as const;
+export const SEVERITY_LEVELS = ["high", "medium", "low", "none"] as const;
 
 export type Severity = (typeof SEVERITY_LEVELS)[number];
 
@@ -56,7 +56,51 @@ export interface ScanRunRecord {
   verdict: AuditVerdict;
   severity_summary: SeveritySummary;
   files_scanned: number;
+  billable_lines: number;
   duration_ms: number;
+}
+
+export interface PricingBreakdown {
+  lineRateCredits: string;
+  lineChargeCredits: string;
+  timeRateCredits: string;
+  timeChargeCredits: string;
+  totalCredits: string;
+}
+
+export interface ScanQuoteRecord {
+  quote_id: string;
+  package: string;
+  version: string;
+  pricing_version: string;
+  billable_lines: number;
+  estimated_minutes: number;
+  ceiling_amount_credits: string;
+  breakdown: PricingBreakdown;
+  status: "pending" | "accepted" | "expired";
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ScanBillingRecord {
+  scan_id: string;
+  quote_id: string;
+  package: string;
+  version: string;
+  pricing_version: string;
+  billable_lines: number;
+  actual_duration_ms: number;
+  actual_minutes: number;
+  line_charge_credits: string;
+  time_charge_credits: string;
+  ceiling_amount_credits: string;
+  final_amount_credits: string;
+  payment_status: "pending" | "paid";
+  payer_identity_id: string | null;
+  recipient_identity_id: string | null;
+  transition_id: string | null;
+  paid_at: string | null;
+  publication_status: "pending" | "published" | "failed";
 }
 
 export interface FindingRecord {
@@ -68,6 +112,8 @@ export interface FindingRecord {
   file_sha256: string;
   severity: Severity;
   tags: string[];
+  line_start?: number;
+  line_end?: number;
   reasoning: string;
   snippet_id: string;
   reviewed: boolean;
@@ -78,7 +124,7 @@ export interface FindingRecord {
 export interface PublicScanListItem {
   name: string;
   version: string;
-  risk: number;
+  risk: Severity;
   files: number;
   flags: number;
   date: string;
@@ -111,6 +157,7 @@ export const SCAN_RUN_SCHEMA = {
     "verdict",
     "severity_summary",
     "files_scanned",
+    "billable_lines",
     "duration_ms",
   ],
   properties: {
@@ -124,16 +171,16 @@ export const SCAN_RUN_SCHEMA = {
     verdict: { type: "string", enum: ["flagged", "safe", "error", "unknown"] },
     severity_summary: {
       type: "object",
-      required: ["critical", "high", "medium", "low", "info"],
+      required: ["high", "medium", "low", "none"],
       properties: {
-        critical: { type: "integer", minimum: 0 },
         high: { type: "integer", minimum: 0 },
         medium: { type: "integer", minimum: 0 },
         low: { type: "integer", minimum: 0 },
-        info: { type: "integer", minimum: 0 },
+        none: { type: "integer", minimum: 0 },
       },
     },
     files_scanned: { type: "integer", minimum: 0 },
+    billable_lines: { type: "integer", minimum: 0 },
     duration_ms: { type: "integer", minimum: 0 },
   },
 } as const;
@@ -164,6 +211,8 @@ export const FINDING_SCHEMA = {
     file_sha256: { type: "string" },
     severity: { type: "string", enum: [...SEVERITY_LEVELS] },
     tags: { type: "array", items: { type: "string" } },
+    line_start: { type: "integer", minimum: 0 },
+    line_end: { type: "integer", minimum: 0 },
     reasoning: { type: "string" },
     snippet_id: { type: "string" },
     reviewed: { type: "boolean" },
@@ -256,11 +305,10 @@ export function isSeverity(value: unknown): value is Severity {
 
 export function emptySeveritySummary(): SeveritySummary {
   return {
-    critical: 0,
     high: 0,
     medium: 0,
     low: 0,
-    info: 0,
+    none: 0,
   };
 }
 
@@ -302,11 +350,10 @@ function asStringArray(value: unknown, label: string): string[] {
 export function parseSeveritySummary(input: unknown): SeveritySummary {
   const obj = asObject(input, "severity_summary");
   return {
-    critical: asNonNegativeInt(obj.critical, "severity_summary.critical"),
     high: asNonNegativeInt(obj.high, "severity_summary.high"),
     medium: asNonNegativeInt(obj.medium, "severity_summary.medium"),
     low: asNonNegativeInt(obj.low, "severity_summary.low"),
-    info: asNonNegativeInt(obj.info, "severity_summary.info"),
+    none: asNonNegativeInt(obj.none, "severity_summary.none"),
   };
 }
 
@@ -329,6 +376,7 @@ export function parseScanRunRecord(input: unknown): ScanRunRecord {
     verdict,
     severity_summary: parseSeveritySummary(obj.severity_summary),
     files_scanned: asNonNegativeInt(obj.files_scanned, "scan_run.files_scanned"),
+    billable_lines: asNonNegativeInt(obj.billable_lines, "scan_run.billable_lines"),
     duration_ms: asNonNegativeInt(obj.duration_ms, "scan_run.duration_ms"),
   };
 }
@@ -337,7 +385,7 @@ export function parseFindingRecord(input: unknown): FindingRecord {
   const obj = asObject(input, "finding");
   const severity = asString(obj.severity, "finding.severity").toLowerCase();
   if (!isSeverity(severity)) {
-    throw new Error("finding.severity must be critical|high|medium|low|info");
+    throw new Error("finding.severity must be high|medium|low|none");
   }
 
   const reviewerNotes = obj.reviewer_notes;
@@ -352,6 +400,8 @@ export function parseFindingRecord(input: unknown): FindingRecord {
     file_sha256: asString(obj.file_sha256, "finding.file_sha256"),
     severity,
     tags: asStringArray(obj.tags, "finding.tags"),
+    line_start: obj.line_start === undefined ? undefined : asNonNegativeInt(obj.line_start, "finding.line_start"),
+    line_end: obj.line_end === undefined ? undefined : asNonNegativeInt(obj.line_end, "finding.line_end"),
     reasoning: asString(obj.reasoning, "finding.reasoning"),
     snippet_id: asString(obj.snippet_id, "finding.snippet_id"),
     reviewed: asBoolean(obj.reviewed, "finding.reviewed"),
@@ -427,22 +477,20 @@ export function parsePublicPackageVersionData(input: unknown): PublicPackageVers
 }
 
 export function toPublicScanListItem(scanRun: ScanRunRecord, findings: FindingRecord[]): PublicScanListItem {
-  const severityWeight: Record<Severity, number> = {
-    critical: 10,
-    high: 8,
-    medium: 5,
-    low: 2,
-    info: 1,
-  };
-
-  const risk = findings.length
-    ? Math.min(10, Math.max(...findings.map((finding) => severityWeight[finding.severity])))
-    : 0;
+  // Compute the highest severity found
+  const severityOrder: Severity[] = ["high", "medium", "low", "none"];
+  let highestSeverity: Severity = "none";
+  for (const finding of findings) {
+    const idx = severityOrder.indexOf(finding.severity);
+    if (idx >= 0 && idx < severityOrder.indexOf(highestSeverity)) {
+      highestSeverity = finding.severity;
+    }
+  }
 
   return {
     name: scanRun.package,
     version: scanRun.version,
-    risk,
+    risk: highestSeverity,
     files: scanRun.files_scanned,
     flags: findings.length,
     date: scanRun.scanned_at.slice(0, 10),

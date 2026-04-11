@@ -28,25 +28,31 @@ import {
   runAgent2Verifier,
   runAgent2FinalVerdict,
 } from "../../../lib/audit/agents";
+import { readQuoteRecord, writeBillingRecord, writeQuoteRecord } from "../../../lib/server/auditPricingStore";
+import {
+  computeFinalCharge,
+  countBillableLines,
+  creditsToTDashString,
+  PRICING_VERSION,
+} from "../../../lib/server/pricing";
+
 
 type CollectedFinding = {
   file: string;
-  risk: number;
+  severity: Severity;
   description: string;
   lineNumbers: number[];
-  source: "agent1" | "verifier";
+  source: "auditor" | "verifier";
 };
 
 function sha256(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-function toSeverity(risk: number): Severity {
-  if (risk >= 9) return "critical";
-  if (risk >= 7) return "high";
-  if (risk >= 4) return "medium";
-  if (risk >= 1) return "low";
-  return "info";
+function parseSeverityFromLLM(value: unknown): Severity {
+  const s = (typeof value === "string" ? value : "").toLowerCase();
+  if (s === "high" || s === "medium" || s === "low" || s === "none") return s;
+  return "low"; // default fallback
 }
 
 function toAuditVerdict(input: string): AuditVerdict {
@@ -84,7 +90,6 @@ function persistArtifacts(payload: {
   const findingsFile = path.join(scanDir, "findings.json");
   const snippetsFile = path.join(scanDir, "snippets.json");
   const publicFile = path.join(scanDir, "public_package_version.json");
-  const pointerFile = path.join(packageDir, `${safeName(key)}.json`);
 
   const publicPayload: PublicPackageVersionData = {
     key,
@@ -97,11 +102,6 @@ function persistArtifacts(payload: {
   fs.writeFileSync(findingsFile, `${JSON.stringify(payload.findings, null, 2)}\n`, "utf-8");
   fs.writeFileSync(snippetsFile, `${JSON.stringify(payload.snippets, null, 2)}\n`, "utf-8");
   fs.writeFileSync(publicFile, `${JSON.stringify(publicPayload, null, 2)}\n`, "utf-8");
-  fs.writeFileSync(
-    pointerFile,
-    `${JSON.stringify({ key, scan_id: payload.scanRun.scan_id, public_payload_file: publicFile }, null, 2)}\n`,
-    "utf-8"
-  );
 
   return {
     scanDir,
@@ -110,7 +110,7 @@ function persistArtifacts(payload: {
       findings: findingsFile,
       snippets: snippetsFile,
       public_payload: publicFile,
-      package_pointer: pointerFile,
+      package_pointer: path.join(packageDir, `${safeName(key)}.json`),
     },
   };
 }
@@ -121,9 +121,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { name, version = "latest" } = req.body ?? {};
-  if (!name) {
-    return res.status(400).json({ error: "Missing package name" });
+  const { name, version = "latest", quoteId } = req.body ?? {};
+  if (!name || !quoteId) {
+    return res.status(400).json({ error: "Missing package name or quoteId" });
   }
 
   const normalizedName = normalizePackageName(String(name));
@@ -151,6 +151,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const tarballSha512 = String(versionMetadata?.dist?.integrity ?? "");
 
     logger.sendEvent("info", { label: `Resolved ${normalizedName}@${normalizedResolvedVersion}` });
+
+    const quote = readQuoteRecord(String(quoteId));
+    if (!quote) {
+      logger.sendEvent("error", { message: `Quote "${quoteId}" not found` });
+      res.end();
+      return;
+    }
+    if (quote.package !== normalizedName || quote.version !== normalizedResolvedVersion) {
+      logger.sendEvent("error", { message: "Quote does not match the requested package version" });
+      res.end();
+      return;
+    }
+    if (new Date(quote.expires_at).getTime() < Date.now()) {
+      logger.sendEvent("error", { message: "Quote has expired" });
+      res.end();
+      return;
+    }
+    if (quote.status !== "accepted" && quote.status !== "pending") {
+      logger.sendEvent("error", { message: "Quote is not valid for billing" });
+      res.end();
+      return;
+    }
+
+    if (quote.status === "pending") {
+      writeQuoteRecord({ ...quote, status: "accepted" });
+    }
 
     // ── Step 2: Fetch source code ──
     logger.sendEvent("phase", { label: "Scanning package structure" });
@@ -247,8 +273,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         // Send each finding as a flag
         if (parsed.findings && Array.isArray(parsed.findings)) {
           for (const finding of parsed.findings) {
-            const file = typeof finding.file === "string" ? finding.file : "unknown";
-            const risk = typeof finding.risk === "number" ? finding.risk : 5;
+            const fileRaw = typeof finding.file === "string" ? finding.file : "unknown";
+            const file = fileRaw.replace(/^\/?/, "").replace(/\s*\(.*?\)\s*$/, "").trim();
+            const severity = parseSeverityFromLLM(finding.severity);
             const description = typeof finding.description === "string" ? finding.description : "No description provided";
             const lineNumbers = Array.isArray(finding.lineNumbers)
               ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
@@ -256,17 +283,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
             collectedFindings.push({
               file,
-              risk,
+              severity,
               description,
               lineNumbers,
-              source: "agent1",
+              source: "auditor",
             });
 
             logger.sendEvent("flag", {
               label: "flagged",
               flag: {
                 file,
-                risk,
+                severity,
                 description,
                 lineNumbers,
               },
@@ -306,7 +333,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       client,
       approveAll
     );
-    logger.sendEvent("agent1_verdict", { agent: "Analyzer", ...agent1Verdict });
+    logger.sendEvent("agent1_verdict", { agent: "Auditor Agent", ...agent1Verdict });
 
     // ── Step 5: VERIFIER AGENT (Agent 2) ──
     logger.sendEvent("phase", { label: "🔍 Verifier Agent: Independent review starting..." });
@@ -371,15 +398,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             // Send any new findings from verifier
             if (parsed.findings && Array.isArray(parsed.findings)) {
                 for (const finding of parsed.findings) {
-                const file = typeof finding.file === "string" ? finding.file : "unknown";
-                const risk = typeof finding.risk === "number" ? finding.risk : 5;
+                const fileRaw = typeof finding.file === "string" ? finding.file : "unknown";
+                const file = fileRaw.replace(/^\/?/, "").replace(/\s*\(.*?\)\s*$/, "").trim();
+                const severity = parseSeverityFromLLM(finding.severity);
                 const description = typeof finding.description === "string" ? finding.description : "No description provided";
+                const lineNumbers = Array.isArray(finding.lineNumbers)
+                  ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
+                  : [];
 
                 collectedFindings.push({
                   file,
-                  risk,
+                  severity,
                   description,
-                  lineNumbers: [],
+                  lineNumbers,
                   source: "verifier",
                 });
 
@@ -387,8 +418,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                     label: "verifier_flagged",
                     flag: {
                     file,
-                    risk,
-                    description: `[Verifier] ${description}`,
+                    severity,
+                    description: `[Verifier Agent] ${description}`,
                     },
                 });
                 }
@@ -436,8 +467,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       // Both agents agree — use the consensus verdict
       logger.sendEvent("final_verdict", {
         verdict: agent1V,
-        riskScore: Math.round(((agent1Verdict?.riskScore ?? 0) + (agent2Verdict?.riskScore ?? 0)) / 2),
-        summary: `✅ Both agents agree: ${agent1Verdict?.summary ?? ""}\n\nVerifier confirms: ${agent2Verdict?.summary ?? ""}`,
+        overallSeverity: agent1Verdict?.overallSeverity ?? "none",
+        summary: `✅ Both agents agree: ${agent1Verdict?.summary ?? ""}\n\nVerifier Agent confirms: ${agent2Verdict?.summary ?? ""}`,
         recommendations: [
           ...(agent1Verdict?.recommendations ?? []),
           ...(agent2Verdict?.recommendations ?? []),
@@ -447,16 +478,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         agent2Verdict: agent2V,
       });
     } else {
-      // Agents DISAGREE — use the more cautious (higher Risk) verdict
+      // Agents DISAGREE — use the more cautious verdict
       logger.sendEvent("phase", { label: "⚖️ Agents disagree — resolving with tie-breaker..." });
 
       const moreRisky = (riskOrder[agent2V] ?? 0) >= (riskOrder[agent1V] ?? 0) ? agent2V : agent1V;
-      const higherRisk = Math.max(agent1Verdict?.riskScore ?? 0, agent2Verdict?.riskScore ?? 0);
 
       logger.sendEvent("final_verdict", {
         verdict: moreRisky,
-        riskScore: higherRisk,
-        summary: `⚠️ Agents disagreed: Agent 1 says ${agent1V} (risk ${agent1Verdict?.riskScore ?? "?"}), Verifier says ${agent2V} (risk ${agent2Verdict?.riskScore ?? "?"}). Using the more cautious assessment.\n\nAgent 1: ${agent1Verdict?.summary ?? ""}\n\nVerifier: ${agent2Verdict?.summary ?? ""}`,
+        overallSeverity: agent2Verdict?.overallSeverity ?? agent1Verdict?.overallSeverity ?? "none",
+        summary: `⚠️ Agents disagreed: Auditor Agent says ${agent1V}, Verifier Agent says ${agent2V}. Using the more cautious assessment.\n\nAuditor Agent: ${agent1Verdict?.summary ?? ""}\n\nVerifier Agent: ${agent2Verdict?.summary ?? ""}`,
         recommendations: [
           ...(agent1Verdict?.recommendations ?? []),
           ...(agent2Verdict?.recommendations ?? []),
@@ -473,11 +503,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const scanId = `scan_${Date.now()}_${sha256(`${normalizedName}@${normalizedResolvedVersion}`).slice(0, 10)}`;
     const findings: FindingRecord[] = collectedFindings.map((item, idx) => {
-      const severity = toSeverity(item.risk);
+      const severity = item.severity;
       bumpSeverity(severitySummary, severity);
 
       const findingSeed = `${scanId}|${item.source}|${item.file}|${item.description}|${idx}`;
       const snippetSeed = `${scanId}|snippet|${item.file}|${idx}`;
+
+      // Compute line range from flagged line numbers
+      const lineStart = item.lineNumbers.length > 0 ? Math.min(...item.lineNumbers) : undefined;
+      const lineEnd = item.lineNumbers.length > 0 ? Math.max(...item.lineNumbers) : undefined;
 
       return {
         finding_id: `finding_${sha256(findingSeed).slice(0, 16)}`,
@@ -488,6 +522,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         file_sha256: sha256(fileContentMap[item.file] ?? fileContentMap["/" + item.file] ?? item.file),
         severity,
         tags: ["automated-audit", item.source],
+        line_start: lineStart,
+        line_end: lineEnd,
+        line_numbers: item.lineNumbers,
+
         reasoning: item.description,
         snippet_id: `snippet_${sha256(snippetSeed).slice(0, 16)}`,
         reviewed: false,
@@ -504,6 +542,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       normalizedResolvedVersion,
       tarballSha512,
     );
+    const billableLines = countBillableLines(fileContentMap);
+    const durationMs = Date.now() - logger.getStartTime();
+
     const scanRun: ScanRunRecord = {
       scan_id: scanId,
       package: normalizedName,
@@ -515,7 +556,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       verdict: toAuditVerdict(finalVerdictValue),
       severity_summary: severitySummary,
       files_scanned: fetchedFiles.length,
-      duration_ms: Date.now() - logger.getStartTime(),
+      billable_lines: billableLines,
+      duration_ms: durationMs,
     };
 
     const artifacts = persistArtifacts({
@@ -537,6 +579,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
+    const finalCharge = computeFinalCharge({
+      billableLines,
+      durationMs,
+      acceptedCeilingCredits: BigInt(quote.ceiling_amount_credits),
+    });
+
+    writeBillingRecord({
+      scan_id: scanId,
+      quote_id: quote.quote_id,
+      package: normalizedName,
+      version: normalizedResolvedVersion,
+      pricing_version: PRICING_VERSION,
+      billable_lines: billableLines,
+      actual_duration_ms: durationMs,
+      actual_minutes: finalCharge.actualMinutes,
+      line_charge_credits: finalCharge.breakdown.lineChargeCredits,
+      time_charge_credits: finalCharge.breakdown.timeChargeCredits,
+      ceiling_amount_credits: quote.ceiling_amount_credits,
+      final_amount_credits: finalCharge.finalAmountCredits.toString(),
+      payment_status: "pending",
+      payer_identity_id: null,
+      recipient_identity_id: process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID || null,
+      transition_id: null,
+      paid_at: null,
+      publication_status: "pending",
+    });
+
     await client.stop();
     logger.log(`═══════════════════════════════════════════════════`);
     logger.log(`AUDIT COMPLETE: ${normalizedName}@${normalizedResolvedVersion}`);
@@ -544,10 +613,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logger.log(`Duration: ${((Date.now() - logger.getStartTime()) / 1000).toFixed(1)}s`);
     logger.log(`JSON output dir: ${artifacts.scanDir}`);
     logger.log(`═══════════════════════════════════════════════════`);
-    logger.sendEvent("done", { label: "Audit complete — verified by 2 independent agents" });
-  } catch (err: any) {
-    logger.log(`ERROR: ${err.message ?? "Audit failed"}`);
-    logger.sendEvent("error", { message: err.message ?? "Audit failed" });
+    logger.sendEvent("done", {
+      label: "Audit complete — final price is ready and the report is locked pending payment",
+      scanId,
+      finalAmountCredits: finalCharge.finalAmountCredits.toString(),
+      finalAmountTDash: creditsToTDashString(finalCharge.finalAmountCredits),
+      estimateAmountTDash: creditsToTDashString(BigInt(quote.ceiling_amount_credits)),
+      paymentStatus: "pending",
+      reportLocked: true,
+      billableLines,
+      actualMinutes: finalCharge.actualMinutes,
+    });
+
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Audit failed";
+    logger.log(`ERROR: ${message}`);
+    logger.sendEvent("error", { message });
   }
 
   logger.flushLog();

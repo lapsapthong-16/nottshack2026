@@ -97,18 +97,20 @@ function buildContractForIdentity(ownerId: string, identityNonce: bigint) {
     ownerId: Identifier.fromBase58(ownerId),
     identityNonce: BigInt(identityNonce) + 1n,
     schemas: buildEvoguardContractSchema(),
-    definitions: {},
+
+
     fullValidation: false,
     platformVersion: 1,
   });
 }
 
-export async function deployEvoguardContract() {
+export async function deployEvoguardContract(force = false) {
   const config = getEvoguardConfig();
   const currentStatus = await getContractStatus();
   console.log("Current Contract Status:", JSON.stringify(currentStatus));
 
-  if (currentStatus.exists && currentStatus.fetchedId) {
+  if (!force && currentStatus.exists && currentStatus.fetchedId) {
+
     console.log("Contract already exists, skipping deployment.");
     return {
       id: currentStatus.fetchedId,

@@ -1,19 +1,20 @@
 import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import Header from "@/components/Header";
 import React from 'react';
 
-type DashDocument = {
+type AuditDocument = {
   id: string;
   pkgName: string;
   version: string;
   riskScore: number;
   malwareDetected: boolean;
   summary: string;
-  files?: number;
-  flags?: number;
+  findingsCount?: number;
+  snippetsCount?: number;
+  filesCount?: number;
+
   [key: string]: any;
 };
 
@@ -32,10 +33,12 @@ function riskLabel(risk: number): string {
 }
 
 export default function Report() {
-  const [documents, setDocuments] = useState<DashDocument[]>([]);
+  const [documents, setDocuments] = useState<AuditDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [details, setDetails] = useState<Record<string, { findings: any[], snippets: any[] }>>({});
+  const [loadingDetails, setLoadingDetails] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/evoguard/document/query")
@@ -44,19 +47,44 @@ export default function Report() {
         if (data.ok) {
           setDocuments(data.documents);
         } else {
-          setError(data.error || "Failed to fetch documents");
+          setError(data.error || "Failed to fetch reports");
         }
       })
       .catch((err) => {
-        setError(err.message || "An error occurred while fetching documents");
+        setError("Connection error");
+        console.error(err);
       })
       .finally(() => {
         setLoading(false);
       });
   }, []);
 
+  async function handleExpand(id: string) {
+    if (expandedId === id) {
+      setExpandedId(null);
+      return;
+    }
+
+    setExpandedId(id);
+
+    if (!details[id]) {
+      setLoadingDetails(id);
+      try {
+        const res = await fetch(`/api/evoguard/document/details?reportId=${id}`);
+        const data = await res.json();
+        if (data.ok) {
+          setDetails(prev => ({ ...prev, [id]: { findings: data.findings, snippets: data.snippets } }));
+        }
+      } catch (err) {
+        console.error("Failed to fetch details:", err);
+      } finally {
+        setLoadingDetails(null);
+      }
+    }
+  }
+
   const totalScanned = documents.length;
-  const totalFlagged = documents.filter((p) => p.malwareDetected).length;
+  const totalFlagged = documents.filter((p) => p.malwareDetected || (p.findingsCount && p.findingsCount > 0)).length;
   const totalSafe = totalScanned - totalFlagged;
   const avgRisk =
     totalScanned > 0
@@ -66,10 +94,9 @@ export default function Report() {
   return (
     <>
       <Head>
-        <title>Validus — Public Audit Reports (On-chain)</title>
+        <title>Public Audits | EvoGuard</title>
       </Head>
-
-      <div className="min-h-screen bg-[#f0ebe4] text-[#1a1a1a]">
+      <div className="min-h-screen bg-[#f7f3ee]">
         <Header />
 
         <main className="mx-auto max-w-5xl px-6 py-10">
@@ -81,10 +108,6 @@ export default function Report() {
               <p className="mt-2 text-sm text-[#6b6b6b]">
                 Packages scanned by the community. Results published on the Dash Platform.
               </p>
-            </div>
-            <div className="flex items-center gap-2 rounded-full bg-[#e8f5e8] px-3 py-1 text-xs font-semibold text-[#2d7a2d] border border-[#d0e8d0]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#2d7a2d] animate-pulse" />
-              Live On-chain
             </div>
           </div>
 
@@ -136,12 +159,12 @@ export default function Report() {
                     Avg risk
                   </p>
                   <p className="mt-2 text-3xl font-bold text-[#1a1a1a]">
-                    {(avgRisk/10).toFixed(1)}
+                    {(avgRisk / 10).toFixed(1)}
                   </p>
                 </div>
               </div>
 
-              {/* Document table */}
+              {/* Table */}
               <div className="mt-8 overflow-hidden rounded-xl border border-[#e0dbd4] bg-white">
                 <table className="w-full text-left text-sm">
                   <thead>
@@ -164,6 +187,7 @@ export default function Report() {
                       <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
                         ID
                       </th>
+
                       <th className="px-5 py-3" />
                     </tr>
                   </thead>
@@ -171,8 +195,8 @@ export default function Report() {
                     {documents.map((doc) => (
                       <React.Fragment key={doc.id}>
                         <tr
-                          className="border-b border-[#f0ebe4] transition hover:bg-[#faf8f5] cursor-pointer"
-                          onClick={() => setExpandedId(expandedId === doc.id ? null : doc.id)}
+                          className={`border-b border-[#f0ebe4] transition hover:bg-[#faf8f5] cursor-pointer ${expandedId === doc.id ? 'bg-[#faf8f5]' : ''}`}
+                          onClick={() => handleExpand(doc.id)}
                         >
                           <td className="px-5 py-3.5 font-medium text-[#1a1a1a]">
                             {doc.pkgName}
@@ -185,23 +209,27 @@ export default function Report() {
                               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${riskColor(doc.riskScore)}`}
                             >
                               {(doc.riskScore / 10).toFixed(1)}
-                              <span className="text-[10px] font-medium opacity-80">
+                              <span className="text-[10px] font-medium opacity-80 uppercase">
                                 {riskLabel(doc.riskScore)}
                               </span>
                             </span>
                           </td>
-                          <td className="px-5 py-3.5 text-[#6b6b6b]">
-                            {doc.files !== undefined ? doc.files : "-"}
+                          <td className="px-5 py-3.5">
+                            <span className="font-mono text-xs text-[#6b6b6b] bg-[#f0f0f0] px-1.5 py-0.5 rounded">
+                              {doc.filesCount || 0}
+                            </span>
                           </td>
                           <td className="px-5 py-3.5">
-                            {doc.malwareDetected || (doc.flags && doc.flags > 0) ? (
-                              <span className="font-medium text-[#e85c5c]">
-                                {doc.flags || (doc.malwareDetected ? "1+" : "-")}
+                            {doc.findingsCount && doc.findingsCount > 0 ? (
+                              <span className="font-bold text-[#e85c5c] flex items-center gap-1">
+                                <span className="h-1 w-1 rounded-full bg-[#e85c5c]" />
+                                {doc.findingsCount}
                               </span>
                             ) : (
                               <span className="text-[#a8a09a]">0</span>
                             )}
                           </td>
+
                           <td className="px-5 py-3.5 text-xs font-mono text-[#a8a09a]">
                             {doc.id.substring(0, 8)}...
                           </td>
@@ -227,18 +255,126 @@ export default function Report() {
                         </tr>
                         {expandedId === doc.id && (
                           <tr className="bg-[#fcfaf8] border-b border-[#f0ebe4]">
-                            <td colSpan={7} className="px-8 py-6">
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <td colSpan={6} className="px-8 py-6">
+                              <div className="space-y-8 animate-fadeIn">
                                 <div>
-                                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#8a8580] mb-2">Summary</h4>
-                                  <p className="text-sm leading-relaxed text-[#4a4a4a]">
+                                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#8a8580] mb-3">Security Summary</h4>
+                                  <div className="rounded-lg border border-[#e0dbd4] bg-white p-4 text-sm leading-relaxed text-[#4a4a4a] whitespace-pre-wrap shadow-sm">
                                     {doc.summary || "No summary provided."}
-                                  </p>
+                                  </div>
                                 </div>
-                                <div>
-                                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#8a8580] mb-2">Raw Dash Node Data</h4>
-                                  <pre className="text-[10px] bg-white border border-[#e0dbd4] p-3 rounded-lg overflow-auto max-h-[300px] font-mono text-[#6b6b6b]">
-                                    {JSON.stringify(doc, null, 2)}
+
+                                {loadingDetails === doc.id ? (
+                                  <div className="flex items-center gap-3 text-sm text-[#8a8580]">
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#b8a9c8] border-t-transparent" />
+                                    Querying Dash Platform fragments...
+                                  </div>
+                                ) : details[doc.id] ? (
+                                  <>
+                                    {details[doc.id].findings.length > 0 && (
+                                      <div>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#8a8580] mb-3">
+                                          Detailed Findings ({details[doc.id].findings.length})
+                                        </h4>
+                                        <div className="space-y-3">
+                                          {details[doc.id].findings.map((finding, idx) => (
+                                            <div key={idx} className="rounded-lg border border-[#e0dbd4] bg-white p-4 shadow-sm border-l-4 border-l-[#e85c5c]">
+                                              <div className="flex items-center gap-3 mb-2">
+                                                <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                                                  finding.severity === 'critical' ? 'bg-red-100 text-red-700' :
+                                                  finding.severity === 'high' ? 'bg-orange-100 text-orange-700' :
+                                                  'bg-yellow-100 text-yellow-700'
+                                                }`}>
+                                                  {finding.severity}
+                                                </span>
+                                                <span className="font-mono text-xs font-medium text-[#1a1a1a]">{finding.file}</span>
+                                              </div>
+                                              <p className="text-sm text-[#4a4a4a] leading-relaxed">{finding.reasoning}</p>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {details[doc.id].snippets.length > 0 && (
+                                      <div>
+                                        <h4 className="text-xs font-bold uppercase tracking-wider text-[#8a8580] mb-3">
+                                          Forensic Evidence
+                                        </h4>
+                                        <div className="space-y-4">
+                                          {details[doc.id].snippets.map((snippet, idx) => {
+                                            const lineStartOffset = snippet.lineStart || 1;
+                                            
+                                            // Parse all flagged lines for this report
+                                            const allFlaggedLines = details[doc.id].findings.reduce((acc: number[], f) => {
+                                              if (f.file === snippet.file && f.lineNumbers) {
+                                                const nums = f.lineNumbers.split(',').map((n: string) => parseInt(n)).filter((n: number) => !isNaN(n));
+                                                return [...acc, ...nums];
+                                              }
+                                              return acc;
+                                            }, []);
+
+                                            const content = (() => {
+                                              if (typeof window === 'undefined') return '';
+                                              try {
+                                                const c = snippet.content;
+                                                if (Array.isArray(c)) return new TextDecoder().decode(new Uint8Array(c));
+                                                if (typeof c === 'string') {
+                                                  if (c.match(/^[A-Za-z0-9+/=]+$/)) return window.atob(c);
+                                                  return c;
+                                                }
+                                                return "";
+                                              } catch (e) { return "Decoding error."; }
+                                            })();
+
+                                            const lines = content.split('\n');
+
+                                            return (
+                                              <div key={idx} className="overflow-hidden rounded-lg border border-[#e0dbd4] bg-[#f7f3ee] shadow-sm">
+                                                <div className="border-b border-[#e0dbd4] bg-[#ebe6e0] px-3 py-1.5 text-[10px] font-mono text-[#8a8580] flex justify-between">
+                                                  <span>{snippet.file} : Lines {snippet.lineStart}-{snippet.lineEnd}</span>
+                                                  {snippet.isMultipart && <span className="text-[#8b6fad] font-bold">RECONSTRUCTED</span>}
+                                                </div>
+                                                <div className="overflow-x-auto bg-[#1e1e1e] p-0">
+                                                  <table className="w-full border-collapse font-mono text-[11px] leading-5">
+                                                    <tbody>
+                                                      {lines.map((line, lineIdx) => {
+                                                        const currentLineNum = lineStartOffset + lineIdx;
+                                                        const isFlagged = allFlaggedLines.includes(currentLineNum);
+                                                        return (
+                                                          <tr key={lineIdx} className={isFlagged ? "bg-[#4a1c1c] border-l-4 border-l-[#e85c5c]" : ""}>
+                                                            <td className="w-10 select-none px-2 text-right text-[#5a5a5a] border-r border-[#333]">
+                                                              {currentLineNum}
+                                                            </td>
+                                                            <td className={`px-4 whitespace-pre ${isFlagged ? "text-[#ffbaba]" : "text-[#d4d4d4]"}`}>
+                                                              {line || " "}
+                                                            </td>
+                                                          </tr>
+                                                        );
+                                                      })}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                  </>
+                                ) : (
+                                  <div className="text-sm text-[#8a8580]">
+                                    No forensic fragments discovered for this report.
+                                  </div>
+                                )}
+
+                                <div className="pt-4 border-t border-[#f0ebe4]">
+                                  <h4 className="text-[10px] font-bold uppercase tracking-wider text-[#bbb6b0] mb-2">Metadata</h4>
+                                  <pre className="text-[9px] text-[#bbb6b0] font-mono whitespace-pre-wrap bg-[#fcfaf8] p-2 rounded border border-[#f0ebe4]">
+                                    Report Document ID: {doc.id}
+                                    {doc.auditorSignature && `\nAuditor Signature: ${doc.auditorSignature}`}
+                                    {`\nFragments: ${doc.findingsCount || 0} findings, ${doc.snippetsCount || 0} snippets`}
                                   </pre>
                                 </div>
                               </div>

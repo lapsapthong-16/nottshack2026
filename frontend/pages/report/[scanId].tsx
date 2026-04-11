@@ -13,8 +13,7 @@ import type {
 
 function severityColor(sev: string): string {
   switch (sev) {
-    case "critical": return "bg-[#e85c5c] text-white";
-    case "high":     return "bg-[#e87c5c] text-white";
+    case "high":     return "bg-[#e85c5c] text-white";
     case "medium":   return "bg-[#e8a85c] text-white";
     case "low":      return "bg-[#e8d85c] text-[#1a1a1a]";
     default:         return "bg-[#d6d0c8] text-[#6b6b6b]";
@@ -70,15 +69,14 @@ function SeverityBadge({ severity }: { severity: string }) {
 }
 
 function SeverityBar({ summary }: { summary: SeveritySummary }) {
-  const total = summary.critical + summary.high + summary.medium + summary.low + summary.info;
+  const total = summary.high + summary.medium + summary.low + summary.none;
   if (total === 0) return <span className="text-xs text-[#a8a09a]">No findings</span>;
 
   const segments = [
-    { key: "critical", count: summary.critical, color: "#e85c5c" },
-    { key: "high",     count: summary.high,     color: "#e87c5c" },
+    { key: "high",     count: summary.high,     color: "#e85c5c" },
     { key: "medium",   count: summary.medium,   color: "#e8a85c" },
     { key: "low",      count: summary.low,      color: "#e8d85c" },
-    { key: "info",     count: summary.info,      color: "#d6d0c8" },
+    { key: "none",     count: summary.none,      color: "#d6d0c8" },
   ];
 
   return (
@@ -99,7 +97,11 @@ function SeverityBar({ summary }: { summary: SeveritySummary }) {
   );
 }
 
-function SnippetViewer({ snippet }: { snippet: SnippetRecord }) {
+function SnippetViewer({ snippet, flaggedLineStart, flaggedLineEnd }: {
+  snippet: SnippetRecord;
+  flaggedLineStart?: number;
+  flaggedLineEnd?: number;
+}) {
   const decoded = decodeBase64(snippet.snippet_decoded || snippet.snippet_raw);
   const lines = decoded.split("\n");
   const lineStart = snippet.line_start ?? 1;
@@ -114,6 +116,11 @@ function SnippetViewer({ snippet }: { snippet: SnippetRecord }) {
           {snippet.file} • L{snippet.line_start ?? snippet.char_start}–
           {snippet.line_end ?? snippet.char_end}
         </span>
+        {flaggedLineStart !== undefined && (
+          <span className="rounded-full bg-[#e85c5c] px-1.5 py-0.5 text-[9px] font-bold text-white">
+            ISSUE L{flaggedLineStart}{flaggedLineEnd && flaggedLineEnd !== flaggedLineStart ? `–${flaggedLineEnd}` : ""}
+          </span>
+        )}
         {snippet.was_minified && (
           <span className="rounded-full bg-[#e8d85c] px-1.5 py-0.5 text-[9px] font-bold text-[#1a1a1a]">
             MINIFIED
@@ -121,14 +128,26 @@ function SnippetViewer({ snippet }: { snippet: SnippetRecord }) {
         )}
       </div>
       <pre className="overflow-x-auto p-3 text-xs leading-relaxed">
-        {lines.map((line, idx) => (
-          <div key={idx} className="flex">
-            <span className="mr-3 inline-block w-8 select-none text-right text-[#c5c0b8]">
-              {lineStart + idx}
-            </span>
-            <span className="text-[#3a3a3a]">{line}</span>
-          </div>
-        ))}
+        {lines.map((line, idx) => {
+          const lineNum = lineStart + idx;
+          const isFlagged =
+            flaggedLineStart !== undefined &&
+            flaggedLineEnd !== undefined &&
+            lineNum >= flaggedLineStart &&
+            lineNum <= flaggedLineEnd;
+
+          return (
+            <div
+              key={idx}
+              className={`flex ${isFlagged ? "bg-[#e85c5c18] border-l-2 border-[#e85c5c] -ml-1 pl-1" : ""}`}
+            >
+              <span className={`mr-3 inline-block w-8 select-none text-right ${isFlagged ? "text-[#e85c5c] font-bold" : "text-[#c5c0b8]"}`}>
+                {lineNum}
+              </span>
+              <span className={isFlagged ? "text-[#1a1a1a] font-medium" : "text-[#3a3a3a]"}>{line}</span>
+            </div>
+          );
+        })}
       </pre>
     </div>
   );
@@ -144,16 +163,24 @@ export default function ScanDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [locked, setLocked] = useState<{ scanId: string } | null>(null);
 
   useEffect(() => {
     if (!scanId || typeof scanId !== "string") return;
 
     fetch(`/api/audit/scan?id=${encodeURIComponent(scanId)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Scan not found (${r.status})`);
-        return r.json();
+      .then(async (r) => {
+        const payload = await r.json();
+        if (r.status === 402) {
+          setLocked({ scanId: payload.scanId ?? scanId });
+          setLoading(false);
+          return null;
+        }
+        if (!r.ok) throw new Error(payload.error || `Scan not found (${r.status})`);
+        return payload;
       })
-      .then((d: PublicPackageVersionData) => {
+      .then((d: PublicPackageVersionData | null) => {
+        if (!d) return;
         setData(d);
         setLoading(false);
       })
@@ -163,12 +190,16 @@ export default function ScanDetail() {
       });
   }, [scanId]);
 
-  // Group findings by file
+  // Group findings by normalized file path
   const findingsByFile = useMemo(() => {
-    if (!data) return {};
+    if (!data?.findings) return {};
     const map: Record<string, FindingRecord[]> = {};
     for (const f of data.findings) {
-      const key = f.file;
+      // Normalize: strip leading slash, remove parenthetical labels like "(helpers)"
+      const key = f.file
+        .replace(/^\/?/, "")            // strip leading /
+        .replace(/\s*\(.*?\)\s*$/, "")  // strip trailing (...)
+        .trim();
       if (!map[key]) map[key] = [];
       map[key].push(f);
     }
@@ -202,6 +233,29 @@ export default function ScanDetail() {
   }
 
   if (error || !data) {
+    if (locked) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f0ebe4] px-6">
+          <div className="max-w-md rounded-2xl border border-[#d6d0c8] bg-white p-6 text-center shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Report Locked</p>
+            <h1 className="mt-2 text-2xl font-bold text-[#1a1a1a]">Payment required to view this scan</h1>
+            <p className="mt-3 text-sm leading-6 text-[#6b6b6b]">
+              The scan finished successfully, but the full report stays private until the dynamic final amount is approved.
+            </p>
+            <Link
+              href={`/pay/${encodeURIComponent(locked.scanId)}`}
+              className="mt-5 inline-flex rounded-xl bg-[#1a1a1a] px-4 py-3 text-sm font-medium text-white transition hover:opacity-90"
+            >
+              Go to payment
+            </Link>
+          </div>
+          <Link href="/report" className="text-xs text-[#b8a9c8] hover:text-[#8a7a9a]">
+            ← Back to reports
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#f0ebe4] gap-4">
         <div className="rounded-xl border border-[#e85c5c33] bg-[#e85c5c11] px-6 py-4 text-sm text-[#e85c5c]">
@@ -282,7 +336,7 @@ export default function ScanDetail() {
             </p>
             <SeverityBar summary={scan_run.severity_summary} />
             <div className="mt-2 flex gap-4 text-[10px] text-[#8a8580]">
-              {(["critical", "high", "medium", "low", "info"] as const).map((s) => (
+              {(["high", "medium", "low", "none"] as const).map((s) => (
                 <span key={s}>
                   <span className="font-bold">{scan_run.severity_summary[s]}</span> {s}
                 </span>
@@ -380,6 +434,11 @@ export default function ScanDetail() {
                           <div className="flex items-center gap-2">
                             <SeverityBadge severity={finding.severity} />
                             <span className="font-mono text-xs text-[#8a8580]">{finding.file}</span>
+                            {finding.line_start !== undefined && (
+                              <span className="rounded bg-[#1a1a1a] px-1.5 py-0.5 font-mono text-[10px] text-white">
+                                L{finding.line_start}{finding.line_end && finding.line_end !== finding.line_start ? `–${finding.line_end}` : ""}
+                              </span>
+                            )}
                           </div>
                           <p className="mt-2 text-sm leading-relaxed text-[#3a3a3a]">
                             {finding.reasoning}
@@ -405,9 +464,13 @@ export default function ScanDetail() {
                         </div>
                       </div>
 
-                      {/* Snippet evidence */}
+                      {/* Snippet evidence with highlighted flagged lines */}
                       {snippetMap[finding.snippet_id] && (
-                        <SnippetViewer snippet={snippetMap[finding.snippet_id]} />
+                        <SnippetViewer
+                          snippet={snippetMap[finding.snippet_id]}
+                          flaggedLineStart={finding.line_start}
+                          flaggedLineEnd={finding.line_end}
+                        />
                       )}
                     </div>
                   ))}

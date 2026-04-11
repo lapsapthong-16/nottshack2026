@@ -12,6 +12,7 @@ import {
   normalizeVersion,
   buildPackageVersionKey,
 } from "../../../lib/shared/auditSchemas";
+import { isBillingPaid, listPaidScanIds, readBillingRecord } from "../../../lib/server/auditPricingStore";
 
 const JSON_BASE = path.join(process.cwd(), "logs", "audit", "json");
 
@@ -66,6 +67,16 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 }
 
 function getScanById(scanId: string, res: NextApiResponse) {
+  if (!isBillingPaid(scanId)) {
+    const billing = readBillingRecord(scanId);
+    return res.status(402).json({
+      error: `Scan "${scanId}" requires payment before it can be viewed`,
+      scanId,
+      paymentRequired: true,
+      paymentStatus: billing?.payment_status ?? "pending",
+    });
+  }
+
   const scanDir = path.join(JSON_BASE, scanId);
   const publicFile = path.join(scanDir, "public_package_version.json");
 
@@ -100,10 +111,13 @@ function listAllScans(res: NextApiResponse) {
   const scanDirs = entries.filter(
     (e) => e.isDirectory() && e.name.startsWith("scan_")
   );
+  const paidIds = listPaidScanIds();
 
   const items = [];
 
   for (const dir of scanDirs) {
+    if (!paidIds.has(dir.name)) continue;
+
     const scanRunFile = path.join(JSON_BASE, dir.name, "scan_run.json");
     const findingsFile = path.join(JSON_BASE, dir.name, "findings.json");
 

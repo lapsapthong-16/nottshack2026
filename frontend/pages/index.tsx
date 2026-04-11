@@ -10,6 +10,21 @@ type NpmResult = {
   publisher: string;
 };
 
+type QuoteResponse = {
+  quoteId: string;
+  package: string;
+  version: string;
+  billableLines: number;
+  estimatedMinutes: number;
+  estimateTDash: string;
+  estimateCredits: string;
+  breakdown: {
+    lineChargeCredits: string;
+    timeChargeCredits: string;
+  };
+  expiresAt: string;
+};
+
 export default function Landing() {
   const router = useRouter();
   const [packageName, setPackageName] = useState("");
@@ -20,7 +35,7 @@ export default function Landing() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null as any);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Version dropdown state ──
   const [versions, setVersions] = useState<string[]>(["latest"]);
@@ -28,8 +43,9 @@ export default function Landing() {
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const versionRef = useRef<HTMLDivElement>(null);
 
-  const examples = ["event-stream", "ua-parser-js", "colors"];
-  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const [isCalculatingQuote, setIsCalculatingQuote] = useState(false);
+  const [quote, setQuote] = useState<QuoteResponse | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -58,6 +74,8 @@ export default function Landing() {
 
   function handlePackageInput(value: string) {
     setPackageName(value);
+    setQuote(null);
+    setQuoteError(null);
     // Reset versions when package name changes
     setVersions(["latest"]);
     setVersion("latest");
@@ -119,136 +137,38 @@ export default function Landing() {
   }, []);
 
   async function handleAudit() {
-    if (!packageName.trim() || isProcessingPayment) return;
+    if (!packageName.trim() || isCalculatingQuote) return;
     
-    const query: Record<string, string> = { name: packageName.trim() };
-    if (version.trim() && version.trim() !== "latest") {
-      query.version = version.trim();
-    }
-
     try {
-      setIsProcessingPayment(true);
-      const win = window as any;
-      
-      // ── Step 1: Check extension is installed ──
-      if (!win.dashPlatformExtension) {
-        alert("Dash Platform Extension is not installed. Please install it to proceed with the audit payment.");
-        setIsProcessingPayment(false);
-        return;
-      }
-      console.log("[Payment] Step 1: Extension detected ✓");
+      setIsCalculatingQuote(true);
+      setQuoteError(null);
+      setQuote(null);
 
-      // ── Step 2: Connect to extension ──
-      const { currentIdentity: identityId } = await win.dashPlatformExtension.signer.connect();
-      if (!identityId) {
-        alert("No identity selected in the Dash Platform Extension.");
-        setIsProcessingPayment(false);
-        return;
-      }
-      console.log("[Payment] Step 2: Connected — Identity:", identityId, "✓");
-
-      // ── Step 3: Get recipient identity from backend ──
-      const infoRes = await fetch("/api/wallet/info");
-      const { wallet, ok, error } = await infoRes.json();
-      if (!ok || !wallet.identityId) {
-        alert("Failed to fetch payment details from server: " + (error || "No identity ID configured."));
-        setIsProcessingPayment(false);
-        return;
-      }
-      const recipientId = wallet.identityId;
-      console.log("[Payment] Step 3: Recipient:", recipientId, "✓");
-
-      // ── Step 4: Build & sign the credit transfer ──
-      const sdk = win.dashPlatformSDK;
-      if (!sdk) {
-        alert("Dash Platform SDK was not injected by the extension. Please check extension status.");
-        setIsProcessingPayment(false);
-        return;
-      }
-
-      const amount = 1000000000n; // 0.01 DASH = 1,000,000,000 credits
-
-      // Fetch the CORRECT on-chain nonce from our backend (EvoSDK)
-      // because pshenmic's sdk.identities.getIdentityNonce returns stale/wrong values
-      const nonceRes = await fetch(`/api/wallet/identity-nonce?identityId=${identityId}`);
-      const nonceData = await nonceRes.json();
-      if (!nonceData.ok) {
-        alert("Failed to fetch identity nonce: " + nonceData.error);
-        setIsProcessingPayment(false);
-        return;
-      }
-      const currentNonce = BigInt(nonceData.nonce);
-      const nextNonce = currentNonce + 1n;
-      console.log("[Payment] Step 4: On-chain nonce:", currentNonce.toString(), "→ using next nonce:", nextNonce.toString());
-      console.log("[Payment] Step 4: Identity balance:", nonceData.balance, "credits");
-
-      // Create unsigned credit-transfer state transition with the CORRECT nonce
-      const stateTransition = sdk.identities.createStateTransition('creditTransfer', {
-        identityId,
-        identityNonce: nextNonce,
-        recipientId,
-        amount,
+      const response = await fetch("/api/audit/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: packageName.trim(),
+          version: version.trim() || "latest",
+        }),
       });
-      console.log("[Payment] Step 4: State transition created ✓");
-
-      // ── Step 5: Extension signs & broadcasts — MUST succeed ──
-      console.log("[Payment] Step 5: Requesting extension to sign & broadcast...");
-      console.log("[Payment]   (The extension popup should appear now — please approve the transaction)");
-      
-      let paymentSuccess = false;
-      let paymentError = "";
-      try {
-        await win.dashPlatformExtension.signer.signAndBroadcast(stateTransition);
-        paymentSuccess = true;
-      } catch (signErr: any) {
-        paymentError = signErr?.message || "Unknown signing error";
-        console.error("❌ Payment signing failed:", paymentError);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to calculate quote");
       }
 
-      if (paymentSuccess) {
-        // ── Step 6: SUCCESS — payment confirmed ──
-        console.log("═══════════════════════════════════════════════════");
-        console.log("  ✅ PAYMENT SUCCESSFUL!");
-        console.log("  Sender:    ", identityId);
-        console.log("  Recipient: ", recipientId);
-        console.log("  Amount:     0.01 DASH (1,000,000,000 credits)");
-        console.log("═══════════════════════════════════════════════════");
-        void router.push({ pathname: "/check", query });
-      } else {
-        // Payment failed — in dev mode, offer skip option
-        if (process.env.NODE_ENV === "development") {
-          const skip = window.confirm(
-            `Payment failed: ${paymentError}\n\n[DEV MODE] Skip payment and proceed to audit anyway?`
-          );
-          if (skip) {
-            void router.push({ pathname: "/check", query });
-            return;
-          }
-        }
-        alert("Payment failed or was cancelled: " + paymentError + "\n\nThe audit cannot proceed without payment.");
-      }
-
-    } catch (e: any) {
-      console.error("❌ Payment Error:", e);
-      if (process.env.NODE_ENV === "development") {
-        const skip = window.confirm(
-          `Payment error: ${e.message || "Unknown error"}\n\n[DEV MODE] Skip payment and proceed to audit anyway?`
-        );
-        if (skip) {
-          void router.push({ pathname: "/check", query });
-          return;
-        }
-      }
-      alert("Payment failed: " + (e.message || "Unknown error"));
+      setQuote(data);
+    } catch (e: unknown) {
+      setQuoteError(e instanceof Error ? e.message : "Failed to calculate quote");
     } finally {
-      setIsProcessingPayment(false);
+      setIsCalculatingQuote(false);
     }
   }
 
-  function handleExampleClick(name: string) {
-    setPackageName(name);
-    setVersion("latest");
-    fetchVersions(name);
+  function handleAcceptQuote() {
+    if (!quote) return;
+    const query: Record<string, string> = { name: quote.package, version: quote.version, quoteId: quote.quoteId };
+    void router.push({ pathname: "/check", query });
   }
 
   return (
@@ -394,12 +314,72 @@ export default function Landing() {
 
                 <button
                   type="submit"
-                  disabled={isProcessingPayment}
+                  disabled={isCalculatingQuote}
                   className="ml-1 mr-1.5 cursor-pointer rounded-lg bg-[#b8a9c8] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#a494b4] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isProcessingPayment ? "Awaiting Payment..." : "Audit"}
+                  {isCalculatingQuote ? "Calculating Estimate..." : "Estimate Price"}
                 </button>
               </form>
+
+              {quoteError && (
+                <div className="w-full rounded-xl border border-[#e85c5c33] bg-[#e85c5c11] px-4 py-3 text-sm text-[#b14a4a]">
+                  {quoteError}
+                </div>
+              )}
+
+              {quote && (
+                <div className="w-full rounded-2xl border border-[#d6d0c8] bg-white p-5 shadow-sm">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Ceiling Estimate</p>
+                      <h2 className="mt-1 text-xl font-semibold text-[#1a1a1a]">
+                        {quote.package}
+                        <span className="ml-2 font-mono text-sm text-[#8a8580]">@{quote.version}</span>
+                      </h2>
+                    </div>
+                    <div className="rounded-xl bg-[#f5f0ea] px-4 py-3 text-right">
+                      <p className="text-[11px] uppercase tracking-[0.12em] text-[#8a8580]">Ceiling</p>
+                      <p className="text-2xl font-bold text-[#1a1a1a]">{quote.estimateTDash} tDASH</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Billable Lines</p>
+                      <p className="mt-1 text-lg font-semibold">{quote.billableLines}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Estimated Minutes</p>
+                      <p className="mt-1 text-lg font-semibold">{quote.estimatedMinutes}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Line Charge</p>
+                      <p className="mt-1 text-lg font-semibold">{quote.breakdown.lineChargeCredits}</p>
+                    </div>
+                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Time Charge</p>
+                      <p className="mt-1 text-lg font-semibold">{quote.breakdown.timeChargeCredits}</p>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-6 text-[#6b6b6b]">
+                    You will only be charged the final scan amount, capped at this ceiling.
+                  </p>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-xs text-[#8a8580]">
+                      Quote expires at {new Date(quote.expiresAt).toLocaleTimeString()}.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAcceptQuote}
+                      className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
+                    >
+                      Accept &amp; Start Scan
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </main>

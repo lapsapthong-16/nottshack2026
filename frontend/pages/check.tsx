@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef } from "react";
 import Head from "next/head";
 import Header from "@/components/Header";
 import { normalizePackageName, normalizeVersion } from "@/lib/shared/auditSchemas";
@@ -27,7 +27,7 @@ type ActivityStep = {
   files?: string[];
   flag?: Flag;
   verdict?: string;
-  riskScore?: number;
+  riskScore?: string;
   summary?: string;
   agent?: string;
   agreesWithAgent1?: boolean;
@@ -58,9 +58,20 @@ type ChunkResult = {
   totalChunks: number;
   chunkFiles?: string[];
   verdict: string;
-  riskScore: number;
+  riskScore: string;
   summary: string;
-  findings: { file: string; risk: number; description: string; lineNumbers?: number[] }[];
+  findings: { file: string; severity: string; description: string; lineNumbers?: number[] }[];
+};
+
+type BillingSummary = {
+  scanId: string;
+  finalAmountCredits: string;
+  finalAmountTDash: string;
+  estimateAmountTDash: string;
+  paymentStatus: string;
+  reportLocked: boolean;
+  billableLines: number;
+  actualMinutes: number;
 };
 
 // ─── Syntax highlighting ────────────────────────────────────────
@@ -147,13 +158,21 @@ function RichText({ text, className = "" }: { text: string; className?: string }
 
 // ─── Risk badge ────────────────────────────────────────────────
 
-function RiskBadge({ risk }: { risk: number }) {
-  const color = risk >= 7 ? "bg-[#e85c5c]" : risk >= 4 ? "bg-[#d4a03c]" : "bg-[#4a9a4a]";
-  const label = risk >= 7 ? "HIGH" : risk >= 4 ? "MED" : "LOW";
+function RiskBadge({ risk }: { risk: number | string | null | undefined }) {
+  if (risk === null || risk === undefined) return null;
+  // Accept both legacy numeric and new string severity
+  let sev: string;
+  if (typeof risk === "number") {
+    sev = risk >= 7 ? "high" : risk >= 4 ? "medium" : risk >= 1 ? "low" : "none";
+  } else {
+    sev = risk || "none";
+  }
+  const color = sev === "high" ? "bg-[#e85c5c]" : sev === "medium" ? "bg-[#d4a03c]" : sev === "low" ? "bg-[#e8d85c] !text-[#1a1a1a]" : "bg-[#4a9a4a]";
+  const label = sev.toUpperCase();
   return (
     <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${color}`}>
       <span className="inline-block h-1.5 w-1.5 rounded-full bg-white/40" />
-      {label} {risk}
+      {label}
     </span>
   );
 }
@@ -348,7 +367,7 @@ function ActivityPanel({
                   </span>
                   {step.riskScore !== undefined && (
                     <span className="text-sm font-bold text-[#4a4a4a]">
-                      Risk Score: {step.riskScore}/10
+                      Severity: {step.riskScore.toUpperCase()}
                     </span>
                   )}
                 </div>
@@ -373,15 +392,9 @@ function ActivityPanel({
 
 function CodeViewer({
   fileView,
-  allFileViews,
-  activeIndex,
-  onTabClick,
   isLoading,
 }: {
   fileView: FileView | null;
-  allFileViews: FileView[];
-  activeIndex: number;
-  onTabClick: (i: number) => void;
   isLoading?: boolean;
 }) {
   if (isLoading) {
@@ -543,13 +556,15 @@ function FilesPanel({
 
 export default function Check() {
   const router = useRouter();
-  const { name, version } = router.query;
+  const { name, version, quoteId } = router.query;
   const pkgName = normalizePackageName(
     typeof name === "string" ? name : Array.isArray(name) ? (name[0] ?? "unknown-package") : "unknown-package"
   );
   const pkgVersion = normalizeVersion(
     typeof version === "string" ? version : Array.isArray(version) ? version[0] : "latest"
   );
+  const resolvedQuoteId =
+    typeof quoteId === "string" ? quoteId : Array.isArray(quoteId) ? (quoteId[0] ?? "") : "";
 
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [visibleSteps, setVisibleSteps] = useState(0);
@@ -558,14 +573,15 @@ export default function Check() {
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [isAuditing, setIsAuditing] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
-  const [finalVerdict, setFinalVerdict] = useState<{ verdict: string; riskScore: number; summary: string } | null>(null);
+  const [finalVerdict, setFinalVerdict] = useState<{ verdict: string; overallSeverity: string; summary: string } | null>(null);
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
 
   // Accumulate chunk results to build file views
   const chunkResults = useRef<ChunkResult[]>([]);
   // Synchronous guard to prevent double audit fire (React StrictMode)
   const auditStarted = useRef(false);
-  // Per-file findings map: path → [{ description, risk, lineNumbers }]
-  const findingsMap = useRef<Record<string, { description: string; risk: number; lineNumbers: number[] }[]>>({});
+  // Per-file findings map: path → [{ description, severity, lineNumbers }]
+  const findingsMap = useRef<Record<string, { description: string; severity: string; lineNumbers: number[] }[]>>({});
   // Per-file summary map: path → summary string (from chunk_result events)
   const fileSummaryMap = useRef<Record<string, string>>({});
   // Track how many total files exist in the package (from unpkg metadata)
@@ -670,8 +686,8 @@ export default function Check() {
   }
 
   // Build file view from finding — fetches real source from unpkg
-  function loadFindingFileView(finding: { file: string; risk: number; description: string; lineNumbers?: number[] }) {
-    const tags = [finding.risk >= 7 ? "MALICIOUS" : finding.risk >= 4 ? "SUSPICIOUS" : "SAFE"];
+  function loadFindingFileView(finding: { file: string; severity: string; description: string; lineNumbers?: number[] }) {
+    const tags = [finding.severity === "high" ? "MALICIOUS" : finding.severity === "medium" ? "SUSPICIOUS" : "SAFE"];
     const lineNums = finding.lineNumbers ?? [];
     ensureFileView(finding.file, [finding.description], tags, finding.description, lineNums);
   }
@@ -680,6 +696,10 @@ export default function Check() {
   useEffect(() => {
     if (!router.isReady) return;
     if (pkgName === "unknown-package") return;
+    if (!resolvedQuoteId) {
+      addStep({ type: "info", label: "❌ Missing quoteId. Start from the pricing step on the landing page." });
+      return;
+    }
     // Synchronous ref guard — prevents StrictMode double-fire
     if (auditStarted.current) return;
     auditStarted.current = true;
@@ -702,7 +722,7 @@ export default function Check() {
         const response = await fetch("/api/audit/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: pkgName, version: pkgVersion }),
+          body: JSON.stringify({ name: pkgName, version: pkgVersion, quoteId: resolvedQuoteId }),
           signal: controller.signal,
         });
 
@@ -748,8 +768,13 @@ export default function Check() {
                   addStep({ type: "info", label: event.label });
                   // Extract total file count from the "Found X files, fetched Y" info message
                   {
-                    const totalMatch = event.label.match(/Found\s+(\d+)\s+files/);
-                    if (totalMatch) setTotalPackageFiles(parseInt(totalMatch[1], 10));
+                    const fetchedMatch = event.label.match(/fetched\s+(\d+)\s+code files/);
+                    if (fetchedMatch) {
+                      setTotalPackageFiles(parseInt(fetchedMatch[1], 10));
+                    } else {
+                      const totalMatch = event.label.match(/Found\s+(\d+)\s+files/);
+                      if (totalMatch) setTotalPackageFiles(parseInt(totalMatch[1], 10));
+                    }
                   }
                   break;
 
@@ -773,14 +798,14 @@ export default function Check() {
                     if (!findingsMap.current[filePath]) findingsMap.current[filePath] = [];
                     findingsMap.current[filePath].push({
                       description: event.flag.description,
-                      risk: event.flag.risk,
+                      severity: event.flag.severity ?? "low",
                       lineNumbers: event.flag.lineNumbers ?? [],
                     });
                   }
                   setFiles((prev) =>
                     prev.map((f) =>
                       f.path === event.flag.file || f.path === `/${event.flag.file}`
-                        ? { ...f, risk: event.flag.risk }
+                        ? { ...f, risk: event.flag.risk ?? event.flag.severity ?? 0 }
                         : f
                     )
                   );
@@ -804,7 +829,7 @@ export default function Check() {
                   // This makes the file count update in real-time
                   if (chunkFiles.length > 0) {
                     const flaggedInChunk = new Set(
-                      (result.findings ?? []).map((f: any) =>
+                      (result.findings ?? []).map((f: { file?: string }) =>
                         (typeof f.file === "string" && f.file.startsWith("/")) ? f.file : "/" + (f.file ?? "")
                       )
                     );
@@ -828,7 +853,7 @@ export default function Check() {
 
                   addStep({
                     type: "info",
-                    label: `Chunk ${result.chunkIndex + 1}/${result.totalChunks}: ${result.verdict} (risk ${result.riskScore}/10)`,
+                    label: `Chunk ${result.chunkIndex + 1}/${result.totalChunks}: ${result.verdict} (${result.riskScore})`,
                   });
                   break;
                 }
@@ -845,7 +870,7 @@ export default function Check() {
                     label: `Agent 1 (${event.agent})`,
                     agent: event.agent,
                     verdict: event.verdict,
-                    riskScore: event.riskScore,
+                    riskScore: event.overallSeverity ?? event.riskScore ?? "none",
                     summary: event.summary,
                   });
                   break;
@@ -856,7 +881,7 @@ export default function Check() {
                     label: `Agent 2 (${event.agent})`,
                     agent: event.agent,
                     verdict: event.verdict,
-                    riskScore: event.riskScore,
+                    riskScore: event.overallSeverity ?? event.riskScore ?? "none",
                     summary: event.summary,
                     agreesWithAgent1: event.agreesWithAgent1,
                     confidence: event.confidence,
@@ -881,14 +906,14 @@ export default function Check() {
                 case "final_verdict":
                   setFinalVerdict({
                     verdict: event.verdict,
-                    riskScore: event.riskScore,
+                    overallSeverity: event.overallSeverity ?? "none",
                     summary: event.summary,
                   });
                   addStep({
                     type: "verdict",
                     label: event.consensus ? "✅ Consensus Verdict" : "⚖️ Resolved Verdict",
                     verdict: event.verdict,
-                    riskScore: event.riskScore,
+                    riskScore: event.overallSeverity ?? "none",
                     summary: event.summary,
                   });
                   break;
@@ -906,6 +931,16 @@ export default function Check() {
                 case "done":
                   addStep({ type: "done", label: event.label });
                   setAuditPhase(8);
+                  setBillingSummary({
+                    scanId: event.scanId,
+                    finalAmountCredits: event.finalAmountCredits,
+                    finalAmountTDash: event.finalAmountTDash,
+                    estimateAmountTDash: event.estimateAmountTDash,
+                    paymentStatus: event.paymentStatus,
+                    reportLocked: Boolean(event.reportLocked),
+                    billableLines: event.billableLines ?? 0,
+                    actualMinutes: event.actualMinutes ?? 0,
+                  });
                   // Mark all unflagged files as safe (risk=0)
                   setFiles((prev) =>
                     prev.map((f) => (f.risk === null ? { ...f, risk: 0 } : f))
@@ -921,9 +956,9 @@ export default function Check() {
             }
           }
         }
-      } catch (err: any) {
-        if (err.name !== "AbortError") {
-          addStep({ type: "info", label: `❌ Audit error: ${err.message}` });
+      } catch (err: unknown) {
+        if (!(err instanceof Error && err.name === "AbortError")) {
+          addStep({ type: "info", label: `❌ Audit error: ${err instanceof Error ? err.message : "Unknown error"}` });
         }
       } finally {
         setIsAuditing(false);
@@ -937,7 +972,7 @@ export default function Check() {
       auditStarted.current = false; // Allow restart on StrictMode remount
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, pkgName]);
+  }, [router.isReady, pkgName, pkgVersion, resolvedQuoteId]);
 
   // Progress is based on audit pipeline phases, not step count
   const progress = finalVerdict
@@ -962,15 +997,20 @@ export default function Check() {
     const fileEntry = files.find((f) => f.path === filePath);
     const risk = fileEntry?.risk ?? 0;
 
-    // Determine real tag from risk
+    // Determine real tag from severity
     let tags: string[];
     if (fileFindings.length > 0) {
-      const maxRisk = Math.max(...fileFindings.map((f) => f.risk));
-      tags = [maxRisk >= 7 ? "MALICIOUS" : maxRisk >= 4 ? "SUSPICIOUS" : "LOW"];
+      const severityOrder = ["high", "medium", "low", "none"];
+      const highestSev = fileFindings.reduce((best, f) => {
+        const idx = severityOrder.indexOf(f.severity);
+        const bestIdx = severityOrder.indexOf(best);
+        return idx >= 0 && idx < bestIdx ? f.severity : best;
+      }, "none");
+      tags = [highestSev === "high" ? "MALICIOUS" : highestSev === "medium" ? "SUSPICIOUS" : highestSev === "low" ? "LOW" : "SAFE"];
     } else if (risk === 0) {
       tags = ["SAFE"];
     } else {
-      tags = [risk >= 7 ? "MALICIOUS" : risk >= 4 ? "SUSPICIOUS" : "LOW"];
+      tags = ["SAFE"];
     }
 
     const descriptions = fileFindings.map((f) => f.description);
@@ -1035,11 +1075,31 @@ export default function Check() {
 
           {/* Center — Code viewer */}
           <main className="flex flex-1 flex-col overflow-hidden">
+            {billingSummary && (
+              <div className="border-b border-[#e0dbd4] bg-white px-6 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Report Locked Pending Payment</p>
+                    <p className="mt-1 text-sm text-[#4a4a4a]">
+                      Final amount: <span className="font-semibold text-[#1a1a1a]">{billingSummary.finalAmountTDash} tDASH</span>
+                      {" "}within approved ceiling of {billingSummary.estimateAmountTDash} tDASH.
+                    </p>
+                    <p className="mt-1 text-xs text-[#8a8580]">
+                      {billingSummary.billableLines} billable lines • {billingSummary.actualMinutes} billed minute{billingSummary.actualMinutes === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void router.push(`/pay/${encodeURIComponent(billingSummary.scanId)}`)}
+                    className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
+                  >
+                    Pay &amp; Unlock Report
+                  </button>
+                </div>
+              </div>
+            )}
             <CodeViewer
               fileView={fileViews[activeFileIndex] ?? null}
-              allFileViews={fileViews}
-              activeIndex={activeFileIndex}
-              onTabClick={setActiveFileIndex}
               isLoading={isLoadingFile}
             />
           </main>
