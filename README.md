@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="./Validus-Logo.jpeg" alt="Validus Logo" width="400" />
-</p>
+![Validus](frontend/public/validus.png)
 
 # Validus — AI-Powered Security Audit Platform
 
