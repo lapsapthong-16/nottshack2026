@@ -1,179 +1,176 @@
-# EvoGuard
+<div align="center">
+  <h1 align="center">Validus</h1>
+  <p align="center">
+    <strong>A high-end, production-grade Dash Platform prototype for publishing and retrieving decentralized package audit metadata.</strong>
+  </p>
+  <p align="center">
+    <a href="#features">Features</a> •
+    <a href="#architecture--repository-layout">Architecture</a> •
+    <a href="#tech-stack">Tech Stack</a> •
+    <a href="#getting-started">Getting Started</a> •
+    <a href="#api-reference">API Reference</a>
+  </p>
+</div>
 
-EvoGuard is a Dash Platform prototype for publishing and retrieving package audit metadata on testnet.
+<br />
 
-The current repo is focused on phases 1 and 2:
+## Overview
 
-- validate a pre-existing Dash Platform identity
-- inspect whether a supplied private key can sign for that identity
-- define and publish an `auditReport` data contract
-- fetch the deployed contract back from Dash Platform
+**Validus** (formerly EvoGuard) is an advanced, production-standard prototype designed to interact seamlessly with the **Dash Platform testnet**. Our core objective is to formulate a decentralized trust anchoring system for package audit metadata. 
 
-The current implementation does **not** require a mnemonic for the EvoGuard flow. It is built around:
+By avoiding mnemonic exposure and strictly leveraging identity IDs and private keys securely matched to on-chain public keys, Validus ensures high-security interactions without compromising on developer experience.
 
-- `DASH_IDENTITY_ID`
-- `EVOGUARD_PRIVATE_KEY_WIF` or `EVOGUARD_PRIVATE_KEY_HEX`
+### Phase 1 & 2 Focus:
+- ✅ **Identity Validation**: Validate pre-existing Dash Platform identities.
+- ✅ **Key Capabilities Analysis**: Inspect whether a supplied private key can sign for an identity.
+- ✅ **Contract Lifecycle**: Define and publish an `auditReport` data contract.
+- ✅ **Decentralized Retrieval**: Fetch deployed contracts securely from Dash Platform.
 
-## Repo Layout
+---
+
+## Architecture & Repository Layout
+
+Validus relies on a well-structured and separated architecture to ensure maintainability and modularity.
 
 ```text
-.
-├── frontend/              Next.js app and EvoGuard UI/API routes
-├── backend/               Misc backend notes/assets
-├── IMPLEMENTATION.md      Working implementation plan / notes
-└── README.md
+nottshack2026/
+├── frontend/              # Next.js 16 core application, UI services, and API routes
+├── backend/               # Auxiliary microservices, notes, and backend structures
+├── IMPLEMENTATION.md      # Live technical implementation plan and architectural decisions
+└── README.md              # Project documentation
 ```
 
-## Current Features
+---
 
-### Identity validation
+## Features
 
-The app can:
+### 🔐 1. Smart Identity Validation
+The core engine safely validates identity states directly against the Dash testnet:
+- Fetches real-time Dash Platform identity states by `ID`.
+- Monitors transparent testnet balances.
+- Performs cryptographic matching of configured private keys against on-chain identity keys.
+- Confirms execution privileges (e.g., name registration, contract deployment).
 
-- fetch a Dash Platform identity by ID
-- read its balance on testnet
-- test whether the configured private key matches any on-chain identity key
-- report whether that matched key can register names or deploy contracts
+### 📜 2. Dynamic Contract Flow
+A seamless data pipeline backing our decentralized data contracts:
+- Locally provisioned `auditReport` contract schemas.
+- High-fidelity **Deploy APIs** using the native `@dashevo/evo-sdk`.
+- Secure **Fetch APIs** to rapidly verify contract deployment status and state.
+- A comprehensive **Admin Interface** surfacing identity metrics, key capability checks, DPNS integrations, and real-time contract statuses.
 
-### Contract flow
+### 💻 3. Polished UI Surfaces
+- **`/`** - Dynamic Landing Page for Validus infrastructure.
+- **`/test`** - Administration console mapping platform metrics.
+- **`/report`** - Public audit report ledger and verification interface.
 
-The app includes:
-
-- a local EvoGuard `auditReport` contract schema
-- a deploy route backed by the Dash Evo SDK
-- a fetch route to retrieve a deployed contract by ID
-- a frontend admin page that shows identity, key capability, DPNS status, and contract state
-
-### UI surfaces
-
-- `/` renders the Validus landing page
-- `/test` renders the EvoGuard admin page
-- `/report` renders the public audit reports page
-
-### API routes
-
-- `GET /api/evoguard/status`
-- `GET /api/evoguard/contract`
-- `POST /api/evoguard/contract/deploy`
-- `POST /api/evoguard/dpns/register`
+---
 
 ## Tech Stack
 
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS 4
-- `@dashevo/evo-sdk`
+Validus is built leveraging modern tools offering top-tier scalability, type-safety, and aesthetic consistency.
+
+- **Framework**: [Next.js 16](https://nextjs.org/) (App Router & API capabilities)
+- **Library**: [React 19](https://react.dev/)
+- **Language**: [TypeScript](https://www.typescriptlang.org/) for robust static typing
+- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/) for utility-first responsive aesthetics
+- **Blockchain SDK**: [`@dashevo/evo-sdk`](https://www.npmjs.com/package/@dashevo/evo-sdk)
+
+---
 
 ## Getting Started
 
-### 1. Install dependencies
+### Prerequisites
+- Node.js `v20+`
+- A verified Dash Platform Testnet Identity ID.
+- The corresponding private key (Hex or WIF format) capable of signing contracts.
+
+### 1. Installation
 
 ```bash
-cd frontend
+git clone https://github.com/lapsapthong-16/nottshack2026.git
+cd nottshack2026/frontend
 npm install
 ```
 
-### 2. Configure env
+### 2. Environment Configuration
 
-Create `frontend/.env` using `frontend/.env.example`.
-
-Minimum required config for the EvoGuard flow:
+Bootstrap your environment by utilizing the provided template:
 
 ```bash
+cp .env.example .env
+```
+
+Populate `.env` with your secure credentials:
+
+```ini
 NETWORK=testnet
-DASH_IDENTITY_ID=your_identity_id
+DASH_IDENTITY_ID=your_platform_identity_id
+
+# Provide EITHER Hex OR WIF format - do NOT commit these to source control.
 EVOGUARD_PRIVATE_KEY_WIF=
 EVOGUARD_PRIVATE_KEY_HEX=
+
+# Contract references
 EVOGUARD_CONTRACT_ID=
 EVOGUARD_DPNS_LABEL=evoguard
 ```
 
-Notes:
+> **Security Note:** `PLATFORM_MNEMONIC` is optional, required only for legacy utilities within the ecosystem, but strictly bypassed in the refined Validus flow for enhanced security.
 
-- Use either `EVOGUARD_PRIVATE_KEY_WIF` or `EVOGUARD_PRIVATE_KEY_HEX`.
-- The key must belong to an on-chain public key on the configured identity.
-- Contract deployment will only work if that identity key is contract-capable.
-- `PLATFORM_MNEMONIC` is only relevant to older wallet utilities in the frontend and is not required for the EvoGuard path.
-
-### 3. Run the app
+### 3. Execution
 
 ```bash
-cd frontend
+# From the frontend directory
 npm run dev
 ```
 
-Open:
+Navigate to `http://localhost:3000` to interact with Validus.
 
-- `http://localhost:3000`
+---
 
-## How to Verify
+## API Reference
 
-### Identity status
+Validus exposes robust internal endpoints handling the heavy lifting of Dash Platform interactivity.
 
-Open:
+- `GET /api/evoguard/status` – Resolves Identity configuration and returns balance & cryptographic signing validations.
+- `GET /api/evoguard/contract` – Retrieves full `auditReport` contract deployment status and schema IDs.
+- `POST /api/evoguard/contract/deploy` – Commits the data contract to testnet securely.
+- `POST /api/evoguard/dpns/register` – Initializes DPNS naming operations mapping aliases to platform IDs.
 
-- `http://localhost:3000/api/evoguard/status`
+---
 
-Successful identity resolution looks like:
+## Strategic Constraints & Security Policy
 
-- `exists: true`
-- non-null `balance`
+Validus employs a stringent zero-mnemonic operational policy designed for production safety.
 
-Successful signing capability looks like:
+Unlike older SDK iterations, this infrastructure leverages direct signature derivation, requiring:
+1. Valid Dash Platform **Identity ID**.
+2. A properly formatted **Private Key** correctly corresponding to bounds in the Identity's active public keys.
+3. Adequate testnet balance and administrative node capability attached to that identity.
 
-- `keyMatchesIdentity: true`
-- non-null `matchedKeyId`
-- `canDeployContracts: true` for contract publishing
+If criteria are unmet, Validus will gracefully fall back, block deployment procedures, and log extensive telemetry highlighting capability failure.
 
-If the response says `Invalid private key`, the supplied secret is not parseable as a single WIF or 64-char hex private key.
+---
 
-### Contract status
-
-Open:
-
-- `http://localhost:3000/api/evoguard/contract`
-
-After a successful deployment, the route should return:
-
-- `exists: true`
-- a `fetchedId`
-- `documentTypes` containing `auditReport`
-
-## Important Constraint
-
-This repo can publish a data contract **without a mnemonic**, but only if you provide:
-
-1. the correct Dash Platform identity ID
-2. the correct private key for a public key on that identity
-3. a key with permissions sufficient for contract signing
-
-If your key does not match the identity, the app will still fetch the identity and balance, but deployment will remain blocked.
-
-## Build and Checks
-
-From `frontend/`:
+## Build, Lint, and Validation Check
 
 ```bash
+cd frontend
 npm run lint
 npx next build --webpack
 ```
+*Note: Using the `--webpack` flag circumvents potential Turbopack processing sandboxes depending on restrictive CI orchestration environments.*
 
-`next build` with Turbopack may fail in restricted environments due to sandbox/process limits, so webpack is the more reliable verification command here.
+---
 
-## Status
+## Product Roadmap
 
-Implemented:
-
-- identity lookup
-- private key matching
-- DPNS status lookup
-- contract deploy/fetch API routes
-- EvoGuard admin frontend
-
-Not yet implemented:
-
-- package scanning
-- document publishing for audit reports
-- CLI package lookup
-- payment-triggered audits
+- [x] Dash Identity Network Resolution
+- [x] Stateless Private Key Authorization Layer  
+- [x] DPNS Verification Status Handling  
+- [x] End-to-End Testnet Contract Deploy API  
+- [x] Validus Advanced User Administration Console  
+- [ ] Automated Pipeline Package Metadata Extraction
+- [ ] On-chain Storage Engine for Decentralized Audit Publication
+- [ ] Decentralized CLI Interrogation
+- [ ] Tiered / Payment-triggered audit mechanisms
