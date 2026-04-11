@@ -2,6 +2,15 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
 import Header from "@/components/Header";
+import { ethers } from "ethers";
+
+const DCAI_CHAIN_ID = "0x4809";
+const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
+const STAKING_ABI = [
+  "function burn(uint256) external",
+  "function getCredits(address) view returns (uint256)",
+];
+const DCAI_BURN_AMOUNT = "0.004870"; // fixed ceiling
 
 type NpmResult = {
   name: string;
@@ -177,8 +186,49 @@ export default function Landing() {
     }
   }
 
-  function handleAcceptQuote() {
+  const [dcaiBurning, setDcaiBurning] = useState(false);
+
+  async function handleAcceptQuote() {
     if (!quote) return;
+    setDcaiBurning(true);
+    try {
+      const injected = (window as any).okxwallet || (window as any).ethereum;
+      if (!injected) { alert("Connect OKX Wallet first"); setDcaiBurning(false); return; }
+
+      // Switch to DCAI chain
+      try {
+        await injected.request({ method: "wallet_switchEthereumChain", params: [{ chainId: DCAI_CHAIN_ID }] });
+      } catch (err: any) {
+        if (err.code === 4902) {
+          await injected.request({
+            method: "wallet_addEthereumChain",
+            params: [{ chainId: DCAI_CHAIN_ID, chainName: "DCAI L3 Testnet", nativeCurrency: { name: "tDCAI", symbol: "tDCAI", decimals: 18 }, rpcUrls: ["http://139.180.188.61:8545"] }],
+          });
+        }
+      }
+
+      const iface = new ethers.Interface(STAKING_ABI);
+      const burnWei = ethers.parseEther(DCAI_BURN_AMOUNT);
+      const accounts: string[] = await injected.request({ method: "eth_requestAccounts" });
+
+      const txHash: string = await injected.request({
+        method: "eth_sendTransaction",
+        params: [{
+          from: accounts[0],
+          to: STAKING_CONTRACT,
+          data: iface.encodeFunctionData("burn", [burnWei]),
+          gas: "0x20000",
+        }],
+      });
+
+      console.log("Burn tx:", txHash);
+    } catch (err: any) {
+      console.error("Burn failed:", err);
+      // Continue to scan even if burn fails
+    } finally {
+      setDcaiBurning(false);
+    }
+
     const query: Record<string, string> = { name: quote.package, version: quote.version, quoteId: quote.quoteId };
     void router.push({ pathname: "/check", query });
   }
@@ -406,7 +456,7 @@ export default function Landing() {
                       <div className="flex items-center gap-3">
                         <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-right">
                           <p className="text-[11px] uppercase tracking-[0.12em] text-amber-600">Ceiling</p>
-                          <p className="text-2xl font-bold text-amber-700">{(quote.billableLines * 0.000005 + quote.estimatedMinutes * 0.001).toFixed(6)} tDCAI</p>
+                          <p className="text-2xl font-bold text-amber-700">{DCAI_BURN_AMOUNT} tDCAI</p>
                         </div>
                         <svg width="12" height="8" viewBox="0 0 12 8" className={`transition-transform ${expandDcai ? "rotate-180" : ""}`}>
                           <path d="M1 1L6 6L11 1" stroke="#d97706" strokeWidth="2" strokeLinecap="round" fill="none"/>
@@ -427,18 +477,18 @@ export default function Landing() {
                           </div>
                           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
                             <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Line Charge</p>
-                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{(quote.billableLines * 0.000005).toFixed(6)}</p>
+                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">0.002870</p>
                           </div>
                           <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
                             <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Time Charge</p>
-                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{(quote.estimatedMinutes * 0.001).toFixed(6)}</p>
+                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">0.002000</p>
                           </div>
                         </div>
                         <p className="mt-4 text-sm leading-6 text-[#6b6b6b]">Pay with tDCAI on DCAI L3 (Chain 18441). Charged from your top-up credits.</p>
                         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <p className="text-xs text-[#8a8580]">Quote expires at {new Date(quote.expiresAt).toLocaleTimeString()}.</p>
-                          <button type="button" onClick={handleAcceptQuote} className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600">
-                            Accept &amp; Start Scan (tDCAI)
+                          <button type="button" onClick={handleAcceptQuote} disabled={dcaiBurning} className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600 disabled:opacity-50">
+                            {dcaiBurning ? "Burning credits..." : "Accept & Start Scan (tDCAI)"}
                           </button>
                         </div>
                       </div>

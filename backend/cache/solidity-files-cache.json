@@ -2,8 +2,8 @@
   "_format": "hh-sol-cache-2",
   "files": {
     "/Users/zwavo/nottshack2026/backend/contracts/ValidusStaking.sol": {
-      "lastModificationDate": 1775938147134,
-      "contentHash": "83c7a8700fafe28951e34dadcb32dcbf",
+      "lastModificationDate": 1775946924468,
+      "contentHash": "73735a1c273bf1f11d14179b087e42b8",
       "sourceName": "contracts/ValidusStaking.sol",
       "solcConfig": {
         "version": "0.8.20",
@@ -36,6 +36,38 @@
       "artifacts": [
         "ValidusStaking"
       ]
+    },
+    "/Users/zwavo/nottshack2026/backend/contracts/query.sol": {
+      "lastModificationDate": 1775939964873,
+      "contentHash": "d41d8cd98f00b204e9800998ecf8427e",
+      "sourceName": "contracts/query.sol",
+      "solcConfig": {
+        "version": "0.8.20",
+        "settings": {
+          "evmVersion": "paris",
+          "optimizer": {
+            "enabled": false,
+            "runs": 200
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode",
+                "evm.deployedBytecode",
+                "evm.methodIdentifiers",
+                "metadata"
+              ],
+              "": [
+                "ast"
+              ]
+            }
+          }
+        }
+      },
+      "imports": [],
+      "versionPragmas": [],
+      "artifacts": []
     }
   }
 }

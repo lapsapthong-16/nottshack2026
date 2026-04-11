@@ -7,7 +7,7 @@ const DCAI_CHAIN_ID = "0x4809";
 const EXPLORER = "http://139.180.140.143";
 
 const BUILDER_PASS = "0x08A8C0497f2756676dEeE5ba32935B2152adF968";
-const STAKING_CONTRACT = "0x47423b0286099CFF00B6Bc2830674CED8caf2BFf";
+const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
 const REPORT_CONTRACT = "0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da";
 
 const PASS_ABI = [
@@ -187,8 +187,8 @@ export default function StackPage() {
 
     setLastTxHash(txHash);
     notify(`Tx sent: ${txHash.slice(0, 10)}...`);
-    const receipt = await provider.waitForTransaction(txHash);
-    return { receipt, txHash };
+    await new Promise(r => setTimeout(r, 3000));
+    return { receipt: null, txHash };
   };
 
   // Top Up

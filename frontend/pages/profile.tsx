@@ -5,7 +5,7 @@ import Header from "@/components/Header";
 const DCAI_RPC_PROXY = "http://localhost:3000/api/dcai/rpc";
 const DCAI_CHAIN_ID = "0x4809";
 const EXPLORER = "http://139.180.140.143";
-const STAKING_CONTRACT = "0x47423b0286099CFF00B6Bc2830674CED8caf2BFf";
+const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
 
 
 const STAKING_ABI = [
@@ -273,9 +273,9 @@ export default function ProfilePage() {
     });
 
     notify(`Tx sent: ${txHash.slice(0, 10)}...`);
-    const provider = new ethers.JsonRpcProvider(DCAI_RPC_PROXY);
-    const receipt = await provider.waitForTransaction(txHash);
-    return { receipt, txHash };
+    // Don't wait for receipt - just delay for chain confirmation
+    await new Promise(r => setTimeout(r, 3000));
+    return { receipt: null, txHash };
   };
 
   const handleStake = async () => {
