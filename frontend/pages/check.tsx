@@ -20,13 +20,17 @@ type Flag = {
 };
 
 type ActivityStep = {
-  type: "phase" | "info" | "filelist" | "flag" | "triage" | "done" | "verdict";
+  type: "phase" | "info" | "filelist" | "flag" | "triage" | "done" | "verdict" | "verification" | "agent_verdict";
   label: string;
   files?: string[];
   flag?: Flag;
   verdict?: string;
   riskScore?: number;
   summary?: string;
+  agent?: string;
+  agreesWithAgent1?: boolean;
+  confidence?: number;
+  detail?: string;
 };
 
 type CodeLine = {
@@ -98,10 +102,16 @@ function ActivityPanel({
               </div>
             )}
             {step.type === "flag" && step.flag && (
-              <div className="rounded-lg border border-[#e8d5d5] bg-[#fdf5f5] p-3">
+              <div className={`rounded-lg border p-3 ${
+                step.label === "verifier_flagged"
+                  ? "border-[#d5d5e8] bg-[#f5f5fd]"
+                  : "border-[#e8d5d5] bg-[#fdf5f5]"
+              }`}>
                 <div className="flex items-center gap-2">
-                  <span className="rounded bg-[#e85c5c] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
-                    flagged
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
+                    step.label === "verifier_flagged" ? "bg-[#6b5c94]" : "bg-[#e85c5c]"
+                  }`}>
+                    {step.label === "verifier_flagged" ? "verifier" : "flagged"}
                   </span>
                   <span className="rounded bg-[#e85c5c] px-1.5 py-0.5 text-[10px] font-bold text-white">
                     risk {step.flag.risk}
@@ -109,6 +119,61 @@ function ActivityPanel({
                 </div>
                 <p className="mt-2 text-xs leading-5 text-[#5a4a4a]">
                   {step.flag.file} — {step.flag.description}
+                </p>
+              </div>
+            )}
+            {step.type === "verification" && (
+              <div className={`rounded-lg border p-3 ${
+                step.label === "false_positive"
+                  ? "border-[#d0e8d8] bg-[#f0faf5]"
+                  : "border-[#e8d5d5] bg-[#fdf5f5]"
+              }`}>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
+                    step.label === "false_positive" ? "bg-[#3d946b]" : "bg-[#c85c3c]"
+                  }`}>
+                    {step.label === "false_positive" ? "✓ false positive" : "⚠ missed threat"}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-5 text-[#4a4a4a]">
+                  {step.detail}
+                </p>
+              </div>
+            )}
+            {step.type === "agent_verdict" && (
+              <div className={`rounded-lg border p-3 ${
+                step.verdict === "SAFE"
+                  ? "border-[#d0e8d0] bg-[#f0faf0]"
+                  : step.verdict === "MALICIOUS"
+                    ? "border-[#e8d0d0] bg-[#faf0f0]"
+                    : "border-[#e8e0d0] bg-[#faf8f0]"
+              }`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="rounded bg-[#6b5c94] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                    {step.agent}
+                  </span>
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
+                    step.verdict === "SAFE" ? "bg-[#2d7a2d]"
+                      : step.verdict === "MALICIOUS" ? "bg-[#e85c5c]"
+                        : "bg-[#c89b3c]"
+                  }`}>
+                    {step.verdict}
+                  </span>
+                  {step.riskScore !== undefined && (
+                    <span className="text-xs font-bold text-[#6b6b6b]">
+                      Risk: {step.riskScore}/10
+                    </span>
+                  )}
+                  {step.agreesWithAgent1 !== undefined && (
+                    <span className={`text-[10px] font-bold ${
+                      step.agreesWithAgent1 ? "text-[#2d7a2d]" : "text-[#c85c3c]"
+                    }`}>
+                      {step.agreesWithAgent1 ? "✓ Agrees" : "✗ Disagrees"}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs leading-5 text-[#4a4a4a]">
+                  {step.summary}
                 </p>
               </div>
             )}
@@ -484,6 +549,45 @@ export default function Check() {
                   addStep({ type: "triage", label: event.label });
                   break;
 
+                case "agent1_verdict":
+                  addStep({
+                    type: "agent_verdict",
+                    label: `Agent 1 (${event.agent})`,
+                    agent: event.agent,
+                    verdict: event.verdict,
+                    riskScore: event.riskScore,
+                    summary: event.summary,
+                  });
+                  break;
+
+                case "agent2_verdict":
+                  addStep({
+                    type: "agent_verdict",
+                    label: `Agent 2 (${event.agent})`,
+                    agent: event.agent,
+                    verdict: event.verdict,
+                    riskScore: event.riskScore,
+                    summary: event.summary,
+                    agreesWithAgent1: event.agreesWithAgent1,
+                    confidence: event.confidence,
+                  });
+                  break;
+
+                case "verification":
+                  addStep({
+                    type: "verification",
+                    label: event.label,
+                    detail: event.detail,
+                  });
+                  break;
+
+                case "verifier_chunk":
+                  addStep({
+                    type: "info",
+                    label: `Verifier chunk ${event.chunkIndex + 1}/${event.totalChunks}: ${event.independentVerdict} ${event.agreesWithAgent1 ? "✓ agrees" : "✗ disagrees"}`,
+                  });
+                  break;
+
                 case "final_verdict":
                   setFinalVerdict({
                     verdict: event.verdict,
@@ -492,7 +596,7 @@ export default function Check() {
                   });
                   addStep({
                     type: "verdict",
-                    label: "Final Verdict",
+                    label: event.consensus ? "✅ Consensus Verdict" : "⚖️ Resolved Verdict",
                     verdict: event.verdict,
                     riskScore: event.riskScore,
                     summary: event.summary,

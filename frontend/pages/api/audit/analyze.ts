@@ -236,10 +236,12 @@ Respond in this EXACT JSON format (no markdown, no code fences):
       }
     }
 
-    // ── Step 4: Final triage ──
-    sendEvent("triage", { label: "Compiling final assessment..." });
+    // ── Step 4: Final triage (Agent 1) ──
+    sendEvent("triage", { label: "Agent 1: Compiling initial assessment..." });
 
-    // Ask Copilot for a final combined verdict
+    let agent1Verdict: any = null;
+
+    // Ask Copilot for a final combined verdict from Agent 1
     try {
       const finalSession = await client.createSession({
         model: "gpt-5-mini",
@@ -263,30 +265,264 @@ Now provide a FINAL combined security assessment. Respond in this EXACT JSON for
 
       try {
         const cleaned = finalContent.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
-        const finalParsed = JSON.parse(cleaned);
-        sendEvent("final_verdict", finalParsed);
+        agent1Verdict = JSON.parse(cleaned);
       } catch {
-        sendEvent("final_verdict", {
+        agent1Verdict = {
           verdict: "UNKNOWN",
           riskScore: 5,
           summary: finalContent.slice(0, 500),
           recommendations: [],
-        });
+        };
       }
+
+      sendEvent("agent1_verdict", { agent: "Analyzer", ...agent1Verdict });
     } catch {
-      sendEvent("final_verdict", {
+      agent1Verdict = {
         verdict: "ERROR",
         riskScore: 0,
-        summary: "Failed to generate final assessment",
+        summary: "Agent 1 failed to generate assessment",
         recommendations: [],
+      };
+      sendEvent("agent1_verdict", { agent: "Analyzer", ...agent1Verdict });
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // ── Step 5: VERIFIER AGENT (Agent 2) ──
+    // An independent agent that reviews the SAME source code AND
+    // the first agent's findings, looking for:
+    //   • False positives (overblown risks)
+    //   • False negatives (missed threats)
+    //   • Verdict accuracy
+    // ═══════════════════════════════════════════════════════════════
+    sendEvent("phase", { label: "🔍 Verifier Agent: Independent review starting..." });
+
+    const verifierAnalyses: string[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const analyzerResult = allAnalyses[i] ?? "No analysis available";
+
+      sendEvent("info", {
+        label: `Verifier reviewing chunk ${i + 1}/${chunks.length}...`,
+      });
+
+      try {
+        const verifierSession = await client.createSession({
+          model: "gpt-5-mini",
+          onPermissionRequest: approveAll,
+        });
+
+        const verifierPrompt = `You are an INDEPENDENT security verification agent. Your job is to double-check another agent's security analysis of the npm package "${name}" (version ${resolvedVersion}).
+
+You must:
+1. Independently analyze the source code below for security issues
+2. Compare your findings against Agent 1's analysis
+3. Identify any FALSE POSITIVES (things Agent 1 flagged that are actually safe)
+4. Identify any FALSE NEGATIVES (real threats Agent 1 missed)
+5. Confirm or challenge Agent 1's verdict
+
+=== AGENT 1's ANALYSIS (CHUNK ${i + 1}/${chunks.length}) ===
+${analyzerResult}
+
+=== PACKAGE SOURCE CODE (CHUNK ${i + 1}/${chunks.length}) ===
+${chunk}
+
+Respond in this EXACT JSON format (no markdown, no code fences):
+{
+  "independentVerdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
+  "independentRiskScore": <number 0-10>,
+  "agreesWithAgent1": true | false,
+  "falsePositives": ["<description of incorrectly flagged items>"],
+  "falseNegatives": ["<description of missed threats>"],
+  "findings": [
+    { "file": "<filepath>", "risk": <number 0-10>, "description": "<finding>" }
+  ],
+  "verificationNotes": "<2-3 sentences explaining your independent assessment and where you agree/disagree with Agent 1>"
+}`;
+
+        const verifierResponse = await verifierSession.sendAndWait({ prompt: verifierPrompt });
+        const verifierContent = verifierResponse?.data?.content ?? "";
+        verifierAnalyses.push(verifierContent);
+
+        try {
+          const cleaned = verifierContent.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
+          const parsed = JSON.parse(cleaned);
+
+          // Send false positives as resolved flags
+          if (parsed.falsePositives && Array.isArray(parsed.falsePositives)) {
+            for (const fp of parsed.falsePositives) {
+              if (fp && fp.trim()) {
+                sendEvent("verification", {
+                  label: "false_positive",
+                  detail: fp,
+                });
+              }
+            }
+          }
+
+          // Send false negatives as new flags
+          if (parsed.falseNegatives && Array.isArray(parsed.falseNegatives)) {
+            for (const fn of parsed.falseNegatives) {
+              if (fn && fn.trim()) {
+                sendEvent("verification", {
+                  label: "missed_threat",
+                  detail: fn,
+                });
+              }
+            }
+          }
+
+          // Send any new findings from verifier
+          if (parsed.findings && Array.isArray(parsed.findings)) {
+            for (const finding of parsed.findings) {
+              sendEvent("flag", {
+                label: "verifier_flagged",
+                flag: {
+                  file: finding.file,
+                  risk: finding.risk ?? 5,
+                  description: `[Verifier] ${finding.description}`,
+                },
+              });
+            }
+          }
+
+          sendEvent("verifier_chunk", {
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            independentVerdict: parsed.independentVerdict,
+            agreesWithAgent1: parsed.agreesWithAgent1,
+            notes: parsed.verificationNotes,
+          });
+        } catch {
+          sendEvent("verifier_chunk", {
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            independentVerdict: "UNKNOWN",
+            agreesWithAgent1: true,
+            notes: verifierContent.slice(0, 500),
+          });
+        }
+      } catch (err: any) {
+        sendEvent("verifier_chunk", {
+          chunkIndex: i,
+          totalChunks: chunks.length,
+          independentVerdict: "ERROR",
+          agreesWithAgent1: true,
+          notes: `Verification failed: ${err.message}`,
+        });
+      }
+    }
+
+    // ── Step 6: Verifier's final verdict ──
+    sendEvent("triage", { label: "Verifier Agent: Compiling verification report..." });
+
+    let agent2Verdict: any = null;
+
+    try {
+      const verifierFinalSession = await client.createSession({
+        model: "gpt-5-mini",
+        onPermissionRequest: approveAll,
+      });
+
+      const verifierFinalPrompt = `You are the VERIFIER agent. You have independently reviewed the npm package "${name}@${resolvedVersion}" and cross-checked Agent 1's analysis.
+
+=== AGENT 1's FINAL VERDICT ===
+${JSON.stringify(agent1Verdict, null, 2)}
+
+=== YOUR CHUNK-BY-CHUNK VERIFICATION ===
+${verifierAnalyses.join("\n\n---\n\n")}
+
+Now provide your FINAL verification report. If you disagree with Agent 1, explain why. Respond in this EXACT JSON format (no markdown, no code fences):
+{
+  "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
+  "riskScore": <number 0-10>,
+  "agreesWithAgent1": true | false,
+  "confidence": <number 0-100>,
+  "summary": "<3-5 sentence verification summary>",
+  "disagreements": ["<point of disagreement>"],
+  "recommendations": ["<action item>"]
+}`;
+
+      const verifierFinalResponse = await verifierFinalSession.sendAndWait({ prompt: verifierFinalPrompt });
+      const verifierFinalContent = verifierFinalResponse?.data?.content ?? "";
+
+      try {
+        const cleaned = verifierFinalContent.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
+        agent2Verdict = JSON.parse(cleaned);
+      } catch {
+        agent2Verdict = {
+          verdict: "UNKNOWN",
+          riskScore: 5,
+          agreesWithAgent1: true,
+          confidence: 50,
+          summary: verifierFinalContent.slice(0, 500),
+          disagreements: [],
+          recommendations: [],
+        };
+      }
+
+      sendEvent("agent2_verdict", { agent: "Verifier", ...agent2Verdict });
+    } catch {
+      agent2Verdict = {
+        verdict: "ERROR",
+        riskScore: 0,
+        agreesWithAgent1: true,
+        confidence: 0,
+        summary: "Verifier agent failed",
+        disagreements: [],
+        recommendations: [],
+      };
+      sendEvent("agent2_verdict", { agent: "Verifier", ...agent2Verdict });
+    }
+
+    // ── Step 7: Resolve final verdict (tie-break if agents disagree) ──
+    const agent1V = agent1Verdict?.verdict ?? "UNKNOWN";
+    const agent2V = agent2Verdict?.verdict ?? "UNKNOWN";
+    const agrees = agent2Verdict?.agreesWithAgent1 !== false && agent1V === agent2V;
+
+    if (agrees) {
+      // Both agents agree — use the consensus verdict
+      sendEvent("final_verdict", {
+        verdict: agent1V,
+        riskScore: Math.round(((agent1Verdict?.riskScore ?? 0) + (agent2Verdict?.riskScore ?? 0)) / 2),
+        summary: `✅ Both agents agree: ${agent1Verdict?.summary ?? ""}\n\nVerifier confirms: ${agent2Verdict?.summary ?? ""}`,
+        recommendations: [
+          ...(agent1Verdict?.recommendations ?? []),
+          ...(agent2Verdict?.recommendations ?? []),
+        ],
+        consensus: true,
+        agent1Verdict: agent1V,
+        agent2Verdict: agent2V,
+      });
+    } else {
+      // Agents DISAGREE — use the more cautious (higher risk) verdict
+      sendEvent("phase", { label: "⚖️ Agents disagree — resolving with tie-breaker..." });
+
+      const riskOrder: Record<string, number> = { SAFE: 0, SUSPICIOUS: 1, MALICIOUS: 2, UNKNOWN: 1, ERROR: 0 };
+      const moreRisky = (riskOrder[agent2V] ?? 0) >= (riskOrder[agent1V] ?? 0) ? agent2V : agent1V;
+      const higherRisk = Math.max(agent1Verdict?.riskScore ?? 0, agent2Verdict?.riskScore ?? 0);
+
+      sendEvent("final_verdict", {
+        verdict: moreRisky,
+        riskScore: higherRisk,
+        summary: `⚠️ Agents disagreed: Agent 1 says ${agent1V} (risk ${agent1Verdict?.riskScore ?? "?"}), Verifier says ${agent2V} (risk ${agent2Verdict?.riskScore ?? "?"}). Using the more cautious assessment.\n\nAgent 1: ${agent1Verdict?.summary ?? ""}\n\nVerifier: ${agent2Verdict?.summary ?? ""}`,
+        recommendations: [
+          ...(agent1Verdict?.recommendations ?? []),
+          ...(agent2Verdict?.recommendations ?? []),
+          ...(agent2Verdict?.disagreements ?? []).map((d: string) => `[Disagreement] ${d}`),
+        ],
+        consensus: false,
+        agent1Verdict: agent1V,
+        agent2Verdict: agent2V,
       });
     }
 
     await client.stop();
-    sendEvent("done", { label: "Audit complete" });
+    sendEvent("done", { label: "Audit complete — verified by 2 independent agents" });
   } catch (err: any) {
     sendEvent("error", { message: err.message ?? "Audit failed" });
   }
 
   res.end();
 }
+
