@@ -163,16 +163,24 @@ export default function ScanDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [locked, setLocked] = useState<{ scanId: string } | null>(null);
 
   useEffect(() => {
     if (!scanId || typeof scanId !== "string") return;
 
     fetch(`/api/audit/scan?id=${encodeURIComponent(scanId)}`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Scan not found (${r.status})`);
-        return r.json();
+      .then(async (r) => {
+        const payload = await r.json();
+        if (r.status === 402) {
+          setLocked({ scanId: payload.scanId ?? scanId });
+          setLoading(false);
+          return null;
+        }
+        if (!r.ok) throw new Error(payload.error || `Scan not found (${r.status})`);
+        return payload;
       })
-      .then((d: PublicPackageVersionData) => {
+      .then((d: PublicPackageVersionData | null) => {
+        if (!d) return;
         setData(d);
         setLoading(false);
       })
@@ -225,6 +233,29 @@ export default function ScanDetail() {
   }
 
   if (error || !data) {
+    if (locked) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f0ebe4] px-6">
+          <div className="max-w-md rounded-2xl border border-[#d6d0c8] bg-white p-6 text-center shadow-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Report Locked</p>
+            <h1 className="mt-2 text-2xl font-bold text-[#1a1a1a]">Payment required to view this scan</h1>
+            <p className="mt-3 text-sm leading-6 text-[#6b6b6b]">
+              The scan finished successfully, but the full report stays private until the dynamic final amount is approved.
+            </p>
+            <Link
+              href={`/pay/${encodeURIComponent(locked.scanId)}`}
+              className="mt-5 inline-flex rounded-xl bg-[#1a1a1a] px-4 py-3 text-sm font-medium text-white transition hover:opacity-90"
+            >
+              Go to payment
+            </Link>
+          </div>
+          <Link href="/report" className="text-xs text-[#b8a9c8] hover:text-[#8a7a9a]">
+            ← Back to reports
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-[#f0ebe4] gap-4">
         <div className="rounded-xl border border-[#e85c5c33] bg-[#e85c5c11] px-6 py-4 text-sm text-[#e85c5c]">

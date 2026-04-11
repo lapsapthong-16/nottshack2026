@@ -56,7 +56,51 @@ export interface ScanRunRecord {
   verdict: AuditVerdict;
   severity_summary: SeveritySummary;
   files_scanned: number;
+  billable_lines: number;
   duration_ms: number;
+}
+
+export interface PricingBreakdown {
+  lineRateCredits: string;
+  lineChargeCredits: string;
+  timeRateCredits: string;
+  timeChargeCredits: string;
+  totalCredits: string;
+}
+
+export interface ScanQuoteRecord {
+  quote_id: string;
+  package: string;
+  version: string;
+  pricing_version: string;
+  billable_lines: number;
+  estimated_minutes: number;
+  ceiling_amount_credits: string;
+  breakdown: PricingBreakdown;
+  status: "pending" | "accepted" | "expired";
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ScanBillingRecord {
+  scan_id: string;
+  quote_id: string;
+  package: string;
+  version: string;
+  pricing_version: string;
+  billable_lines: number;
+  actual_duration_ms: number;
+  actual_minutes: number;
+  line_charge_credits: string;
+  time_charge_credits: string;
+  ceiling_amount_credits: string;
+  final_amount_credits: string;
+  payment_status: "pending" | "paid";
+  payer_identity_id: string | null;
+  recipient_identity_id: string | null;
+  transition_id: string | null;
+  paid_at: string | null;
+  publication_status: "pending" | "published" | "failed";
 }
 
 export interface FindingRecord {
@@ -113,6 +157,7 @@ export const SCAN_RUN_SCHEMA = {
     "verdict",
     "severity_summary",
     "files_scanned",
+    "billable_lines",
     "duration_ms",
   ],
   properties: {
@@ -135,6 +180,7 @@ export const SCAN_RUN_SCHEMA = {
       },
     },
     files_scanned: { type: "integer", minimum: 0 },
+    billable_lines: { type: "integer", minimum: 0 },
     duration_ms: { type: "integer", minimum: 0 },
   },
 } as const;
@@ -330,6 +376,7 @@ export function parseScanRunRecord(input: unknown): ScanRunRecord {
     verdict,
     severity_summary: parseSeveritySummary(obj.severity_summary),
     files_scanned: asNonNegativeInt(obj.files_scanned, "scan_run.files_scanned"),
+    billable_lines: asNonNegativeInt(obj.billable_lines, "scan_run.billable_lines"),
     duration_ms: asNonNegativeInt(obj.duration_ms, "scan_run.duration_ms"),
   };
 }

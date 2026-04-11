@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useEffect, useState, useRef, useMemo } from "react";
+import { useEffect, useState, useRef } from "react";
 import Head from "next/head";
 import Header from "@/components/Header";
 import { normalizePackageName, normalizeVersion } from "@/lib/shared/auditSchemas";
@@ -61,6 +61,17 @@ type ChunkResult = {
   riskScore: string;
   summary: string;
   findings: { file: string; severity: string; description: string; lineNumbers?: number[] }[];
+};
+
+type BillingSummary = {
+  scanId: string;
+  finalAmountCredits: string;
+  finalAmountTDash: string;
+  estimateAmountTDash: string;
+  paymentStatus: string;
+  reportLocked: boolean;
+  billableLines: number;
+  actualMinutes: number;
 };
 
 // ─── Syntax highlighting ────────────────────────────────────────
@@ -381,15 +392,9 @@ function ActivityPanel({
 
 function CodeViewer({
   fileView,
-  allFileViews,
-  activeIndex,
-  onTabClick,
   isLoading,
 }: {
   fileView: FileView | null;
-  allFileViews: FileView[];
-  activeIndex: number;
-  onTabClick: (i: number) => void;
   isLoading?: boolean;
 }) {
   if (isLoading) {
@@ -551,13 +556,15 @@ function FilesPanel({
 
 export default function Check() {
   const router = useRouter();
-  const { name, version } = router.query;
+  const { name, version, quoteId } = router.query;
   const pkgName = normalizePackageName(
     typeof name === "string" ? name : Array.isArray(name) ? (name[0] ?? "unknown-package") : "unknown-package"
   );
   const pkgVersion = normalizeVersion(
     typeof version === "string" ? version : Array.isArray(version) ? version[0] : "latest"
   );
+  const resolvedQuoteId =
+    typeof quoteId === "string" ? quoteId : Array.isArray(quoteId) ? (quoteId[0] ?? "") : "";
 
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [visibleSteps, setVisibleSteps] = useState(0);
@@ -567,6 +574,7 @@ export default function Check() {
   const [isAuditing, setIsAuditing] = useState(false);
   const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [finalVerdict, setFinalVerdict] = useState<{ verdict: string; overallSeverity: string; summary: string } | null>(null);
+  const [billingSummary, setBillingSummary] = useState<BillingSummary | null>(null);
 
   // Accumulate chunk results to build file views
   const chunkResults = useRef<ChunkResult[]>([]);
@@ -688,6 +696,10 @@ export default function Check() {
   useEffect(() => {
     if (!router.isReady) return;
     if (pkgName === "unknown-package") return;
+    if (!resolvedQuoteId) {
+      addStep({ type: "info", label: "❌ Missing quoteId. Start from the pricing step on the landing page." });
+      return;
+    }
     // Synchronous ref guard — prevents StrictMode double-fire
     if (auditStarted.current) return;
     auditStarted.current = true;
@@ -710,7 +722,7 @@ export default function Check() {
         const response = await fetch("/api/audit/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: pkgName, version: pkgVersion }),
+          body: JSON.stringify({ name: pkgName, version: pkgVersion, quoteId: resolvedQuoteId }),
           signal: controller.signal,
         });
 
@@ -817,7 +829,7 @@ export default function Check() {
                   // This makes the file count update in real-time
                   if (chunkFiles.length > 0) {
                     const flaggedInChunk = new Set(
-                      (result.findings ?? []).map((f: any) =>
+                      (result.findings ?? []).map((f: { file?: string }) =>
                         (typeof f.file === "string" && f.file.startsWith("/")) ? f.file : "/" + (f.file ?? "")
                       )
                     );
@@ -919,6 +931,16 @@ export default function Check() {
                 case "done":
                   addStep({ type: "done", label: event.label });
                   setAuditPhase(8);
+                  setBillingSummary({
+                    scanId: event.scanId,
+                    finalAmountCredits: event.finalAmountCredits,
+                    finalAmountTDash: event.finalAmountTDash,
+                    estimateAmountTDash: event.estimateAmountTDash,
+                    paymentStatus: event.paymentStatus,
+                    reportLocked: Boolean(event.reportLocked),
+                    billableLines: event.billableLines ?? 0,
+                    actualMinutes: event.actualMinutes ?? 0,
+                  });
                   // Mark all unflagged files as safe (risk=0)
                   setFiles((prev) =>
                     prev.map((f) => (f.risk === null ? { ...f, risk: 0 } : f))
@@ -934,9 +956,9 @@ export default function Check() {
             }
           }
         }
-      } catch (err: any) {
-        if (err.name !== "AbortError") {
-          addStep({ type: "info", label: `❌ Audit error: ${err.message}` });
+      } catch (err: unknown) {
+        if (!(err instanceof Error && err.name === "AbortError")) {
+          addStep({ type: "info", label: `❌ Audit error: ${err instanceof Error ? err.message : "Unknown error"}` });
         }
       } finally {
         setIsAuditing(false);
@@ -950,7 +972,7 @@ export default function Check() {
       auditStarted.current = false; // Allow restart on StrictMode remount
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, pkgName]);
+  }, [router.isReady, pkgName, pkgVersion, resolvedQuoteId]);
 
   // Progress is based on audit pipeline phases, not step count
   const progress = finalVerdict
@@ -1053,11 +1075,31 @@ export default function Check() {
 
           {/* Center — Code viewer */}
           <main className="flex flex-1 flex-col overflow-hidden">
+            {billingSummary && (
+              <div className="border-b border-[#e0dbd4] bg-white px-6 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Report Locked Pending Payment</p>
+                    <p className="mt-1 text-sm text-[#4a4a4a]">
+                      Final amount: <span className="font-semibold text-[#1a1a1a]">{billingSummary.finalAmountTDash} tDASH</span>
+                      {" "}within approved ceiling of {billingSummary.estimateAmountTDash} tDASH.
+                    </p>
+                    <p className="mt-1 text-xs text-[#8a8580]">
+                      {billingSummary.billableLines} billable lines • {billingSummary.actualMinutes} billed minute{billingSummary.actualMinutes === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void router.push(`/pay/${encodeURIComponent(billingSummary.scanId)}`)}
+                    className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
+                  >
+                    Pay &amp; Unlock Report
+                  </button>
+                </div>
+              </div>
+            )}
             <CodeViewer
               fileView={fileViews[activeFileIndex] ?? null}
-              allFileViews={fileViews}
-              activeIndex={activeFileIndex}
-              onTabClick={setActiveFileIndex}
               isLoading={isLoadingFile}
             />
           </main>
