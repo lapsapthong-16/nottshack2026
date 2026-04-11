@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { useState, useCallback } from "react";
 import { ethers } from "ethers";
 
@@ -134,21 +135,22 @@ export default function Header({
       <header className="flex items-center border-b border-[#e0dbd4] bg-[#f0ebe4] px-6 py-3">
         <Link
           href="/"
-          className="font-display text-lg font-bold tracking-tight text-[#1a1a1a] no-underline transition-opacity hover:opacity-80"
+          className="flex items-center transition-opacity hover:opacity-80"
         >
-          Validus
+          <Image
+            src="/resouces/logo.png"
+            alt="Validus Logo"
+            width={180}
+            height={94}
+            className="h-11 w-auto object-contain"
+            priority
+          />
         </Link>
 
         {/* Nav links */}
         <nav className="ml-8 flex items-center gap-6">
-          <Link href="/check" className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]">
-            Audit
-          </Link>
           <Link href="/report" className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]">
             Reports
-          </Link>
-          <Link href="/profile" className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]">
-            Profile
           </Link>
         </nav>
 
