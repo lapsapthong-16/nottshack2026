@@ -17,11 +17,10 @@ When the user asks you to write Dash Platform code, follow these patterns and us
 
 ```
 NETWORK=testnet
-EVOGUARD_IDENTITY_ID=DkFeADqFup7kxWPZAW9ZMrY4MvxCq2u9Tm4dz8vM8cWv
-EVOGUARD_PRIVATE_KEY_HEX=cPsSGYkxhmm1kZ73WB8HSv9gxzWMQBXWStdcWWkvgjGfZGTphGb7
-EVOGUARD_PRIVATE_KEY_WIF=cPsSGYkxhmm1kZ73WB8HSv9gxzWMQBXWStdcWWkvgjGfZGTphGb7
+DASH_IDENTITY_ID=DkFeADqFup7kxWPZAW9ZMrY4MvxCq2u9Tm4dz8vM8cWv
+EVOGUARD_PRIVATE_KEY_HEX=
+EVOGUARD_PRIVATE_KEY_WIF=
 EVOGUARD_CONTRACT_ID=
-EVOGUARD_DPNS_LABEL=evoguard
 ```
 
 ---
@@ -30,7 +29,7 @@ EVOGUARD_DPNS_LABEL=evoguard
 
 - **dash-evo-tool** — DO NOT USE. Teammate confirmed it's a massive time sink ("big act waste time only"). It's a desktop GUI for managing identities/contracts, but for this project we use the SDK directly via code. If someone suggests using it, refuse.
 - **Masternodes / full core node setup** — DO NOT DO. Not needed for development. The SDK connects to testnet masternodes automatically via `EvoSDK.testnetTrusted()`.
-- **Mnemonic-based key derivation** — NOT NEEDED for this project. We use identity ID + private key directly from `.env`. The `IdentityKeyManager` class in `setupDashClient.mjs` exists but our flow uses `resolveWritableIdentityContext()` from `identityCredentialService.ts` which reads `EVOGUARD_IDENTITY_ID` + `EVOGUARD_PRIVATE_KEY_WIF`/`HEX` instead.
+- **Mnemonic-based key derivation** — NOT NEEDED for this project. We use identity ID + private key directly from `.env`. The `IdentityKeyManager` class in `setupDashClient.mjs` exists but our flow uses `resolveWritableIdentityContext()` from `identityCredentialService.ts` which reads `DASH_IDENTITY_ID` + `EVOGUARD_PRIVATE_KEY_WIF`/`HEX` instead.
 
 ### About dash-evo-tool (for reference only — DO NOT USE)
 - Repo: https://github.com/dashpay/dash-evo-tool

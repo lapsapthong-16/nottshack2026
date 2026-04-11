@@ -26,7 +26,7 @@ export function getEvoguardConfig(): EvoguardConfig {
 
   return {
     network,
-    identityId: readEnv("EVOGUARD_IDENTITY_ID"),
+    identityId: readEnv("DASH_IDENTITY_ID"),
     privateKeyWif: readEnv("EVOGUARD_PRIVATE_KEY_WIF"),
     privateKeyHex: readEnv("EVOGUARD_PRIVATE_KEY_HEX"),
     contractId: readEnv("EVOGUARD_CONTRACT_ID"),

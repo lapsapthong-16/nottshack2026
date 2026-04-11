@@ -47,7 +47,7 @@ export async function getIdentityCapabilityStatus(): Promise<{
         configuredId: null,
         exists: false,
         balance: null,
-        error: "EVOGUARD_IDENTITY_ID is not configured.",
+        error: "DASH_IDENTITY_ID is not configured.",
         key: {
           provided: Boolean(config.privateKeyWif || config.privateKeyHex),
           format: null,
@@ -102,7 +102,7 @@ export async function resolveWritableIdentityContext(): Promise<ResolvedIdentity
   const config = getEvoguardConfig();
 
   if (!config.identityId) {
-    throw new Error("EVOGUARD_IDENTITY_ID is not configured.");
+    throw new Error("DASH_IDENTITY_ID is not configured.");
   }
 
   const sdk = await createClient(config.network);

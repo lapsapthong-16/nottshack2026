@@ -429,7 +429,7 @@ export default function EvoGuardPage() {
             </p>
             <div className="mt-5 grid gap-4">
               <div className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4 font-mono text-sm">
-                EVOGUARD_IDENTITY_ID={identity?.configuredId ?? ""}
+                DASH_IDENTITY_ID={identity?.configuredId ?? ""}
               </div>
               <div className="rounded-[1.25rem] border border-white/10 bg-white/5 p-4 font-mono text-sm">
                 EVOGUARD_CONTRACT_ID={contract?.fetchedId ?? ""}

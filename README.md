@@ -11,7 +11,7 @@ The current repo is focused on phases 1 and 2:
 
 The current implementation does **not** require a mnemonic for the EvoGuard flow. It is built around:
 
-- `EVOGUARD_IDENTITY_ID`
+- `DASH_IDENTITY_ID`
 - `EVOGUARD_PRIVATE_KEY_WIF` or `EVOGUARD_PRIVATE_KEY_HEX`
 
 ## Repo Layout
@@ -82,7 +82,7 @@ Minimum required config for the EvoGuard flow:
 
 ```bash
 NETWORK=testnet
-EVOGUARD_IDENTITY_ID=your_identity_id
+DASH_IDENTITY_ID=your_identity_id
 EVOGUARD_PRIVATE_KEY_WIF=
 EVOGUARD_PRIVATE_KEY_HEX=
 EVOGUARD_CONTRACT_ID=
