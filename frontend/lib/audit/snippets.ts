@@ -18,10 +18,10 @@ function isMinified(content: string): boolean {
 
 type CollectedFinding = {
   file: string;
-  risk: number;
+  severity: string;
   description: string;
   lineNumbers: number[];
-  source: "agent1" | "verifier";
+  source: "auditor" | "verifier";
 };
 
 /**
