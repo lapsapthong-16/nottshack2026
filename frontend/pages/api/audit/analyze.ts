@@ -251,6 +251,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
               : [];
 
+            if (severity === "none" || severity === "safe") continue;
+
             collectedFindings.push({
               file,
               severity,
@@ -376,6 +378,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
                   : [];
 
+                if (severity === "none" || severity === "safe") continue;
+
                 collectedFindings.push({
                   file,
                   severity,
@@ -433,16 +437,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const agrees = agent2Verdict?.agreesWithAgent1 !== false && agent1V === agent2V;
     const riskOrder: Record<string, number> = { SAFE: 0, SUSPICIOUS: 1, MALICIOUS: 2, UNKNOWN: 1, ERROR: 0 };
 
+    // Deduplicate recommendations
+    const getUniqueRecs = (v1: any, v2: any) => {
+        const all = [...(v1?.recommendations ?? []), ...(v2?.recommendations ?? [])];
+        return Array.from(new Set(all));
+    };
+
+
     if (agrees) {
       // Both agents agree — use the consensus verdict
       logger.sendEvent("final_verdict", {
         verdict: agent1V,
         overallSeverity: agent1Verdict?.overallSeverity ?? "none",
         summary: `✅ Both agents agree: ${agent1Verdict?.summary ?? ""}\n\nVerifier Agent confirms: ${agent2Verdict?.summary ?? ""}`,
-        recommendations: [
-          ...(agent1Verdict?.recommendations ?? []),
-          ...(agent2Verdict?.recommendations ?? []),
-        ],
+        recommendations: getUniqueRecs(agent1Verdict, agent2Verdict),
         consensus: true,
         agent1Verdict: agent1V,
         agent2Verdict: agent2V,
@@ -458,8 +466,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         overallSeverity: agent2Verdict?.overallSeverity ?? agent1Verdict?.overallSeverity ?? "none",
         summary: `⚠️ Agents disagreed: Auditor Agent says ${agent1V}, Verifier Agent says ${agent2V}. Using the more cautious assessment.\n\nAuditor Agent: ${agent1Verdict?.summary ?? ""}\n\nVerifier Agent: ${agent2Verdict?.summary ?? ""}`,
         recommendations: [
-          ...(agent1Verdict?.recommendations ?? []),
-          ...(agent2Verdict?.recommendations ?? []),
+          ...getUniqueRecs(agent1Verdict, agent2Verdict),
           ...(agent2Verdict?.disagreements ?? []).map((d: string) => `[Disagreement] ${d}`),
         ],
         consensus: false,
@@ -471,8 +478,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const finalVerdictValue = agrees ? agent1V : ((riskOrder[agent2V] ?? 0) >= (riskOrder[agent1V] ?? 0) ? agent2V : agent1V);
     const severitySummary = emptySeveritySummary();
 
+    // ── Step 8: Deduplicate collectedFindings (Prefer Verifier if both found issues in same file/severity) ──
+    const verifierFindings = collectedFindings.filter(f => f.source === "verifier");
+    const auditorFindings = collectedFindings.filter(f => f.source === "auditor");
+    
+    // We keep all verifier findings. 
+    // We only keep auditor findings if there isn't already a verifier finding for the same file and severity.
+    const dedupedFindings: CollectedFinding[] = [...verifierFindings];
+    for (const af of auditorFindings) {
+        const alreadyFound = verifierFindings.some(vf => vf.file === af.file && vf.severity === af.severity);
+        if (!alreadyFound) {
+            dedupedFindings.push(af);
+        }
+    }
+
     const scanId = `scan_${Date.now()}_${sha256(`${normalizedName}@${normalizedResolvedVersion}`).slice(0, 10)}`;
-    const findings: FindingRecord[] = collectedFindings.map((item, idx) => {
+    const findings: FindingRecord[] = dedupedFindings.map((item, idx) => {
       const severity = item.severity;
       bumpSeverity(severitySummary, severity);
 

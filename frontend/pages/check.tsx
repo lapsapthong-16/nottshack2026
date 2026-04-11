@@ -221,15 +221,13 @@ function ActivityPanel({
             )}
 
             {step.type === "flag" && step.flag && (
-              <div className={`ml-3.5 rounded-lg border-l-[3px] p-3 ${
-                step.label === "verifier_flagged"
+              <div className={`ml-3.5 rounded-lg border-l-[3px] p-3 ${step.label === "verifier_flagged"
                   ? "border-l-[#6b5c94] bg-[#f5f3fa]"
                   : "border-l-[#e85c5c] bg-[#fdf6f6]"
-              }`}>
+                }`}>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
-                    step.label === "verifier_flagged" ? "bg-[#6b5c94]" : "bg-[#e85c5c]"
-                  }`}>
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${step.label === "verifier_flagged" ? "bg-[#6b5c94]" : "bg-[#e85c5c]"
+                    }`}>
                     {step.label === "verifier_flagged" ? "🔍 verifier" : "⚠ flagged"}
                   </span>
                   <RiskBadge risk={step.flag.risk} />
@@ -242,15 +240,13 @@ function ActivityPanel({
             )}
 
             {step.type === "verification" && (
-              <div className={`ml-3.5 rounded-lg border-l-[3px] p-3 ${
-                step.label === "false_positive"
+              <div className={`ml-3.5 rounded-lg border-l-[3px] p-3 ${step.label === "false_positive"
                   ? "border-l-[#4a9a4a] bg-[#f5faf8]"
                   : "border-l-[#d47a3c] bg-[#fdf9f5]"
-              }`}>
+                }`}>
                 <div className="flex items-center gap-2 mb-1.5">
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
-                    step.label === "false_positive" ? "bg-[#4a9a4a]" : "bg-[#d47a3c]"
-                  }`}>
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${step.label === "false_positive" ? "bg-[#4a9a4a]" : "bg-[#d47a3c]"
+                    }`}>
                     {step.label === "false_positive" ? "✓ false positive" : "⚠ missed threat"}
                   </span>
                 </div>
@@ -259,33 +255,30 @@ function ActivityPanel({
             )}
 
             {step.type === "agent_verdict" && (
-              <div className={`ml-3.5 rounded-lg border p-3 ${
-                step.verdict === "SAFE"
+              <div className={`ml-3.5 rounded-lg border p-3 ${step.verdict === "SAFE"
                   ? "border-[#c0dcc0] bg-[#f5faf5]"
                   : step.verdict === "MALICIOUS"
                     ? "border-[#dcc0c0] bg-[#faf5f5]"
                     : "border-[#dcd8c0] bg-[#fafaf5]"
-              }`}>
+                }`}>
                 <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className="rounded bg-[#6b5c94] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
                     {step.agent}
                   </span>
-                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${
-                    step.verdict === "SAFE" ? "bg-[#4a9a4a]"
+                  <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white ${step.verdict === "SAFE" ? "bg-[#4a9a4a]"
                       : step.verdict === "MALICIOUS" ? "bg-[#e85c5c]"
                         : "bg-[#d4a03c]"
-                  }`}>
+                    }`}>
                     {step.verdict}
                   </span>
                   {step.riskScore !== undefined && (
                     <RiskBadge risk={step.riskScore} />
                   )}
                   {step.agreesWithAgent1 !== undefined && (
-                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                      step.agreesWithAgent1
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${step.agreesWithAgent1
                         ? "bg-[#e8f5e8] text-[#2d7a2d]"
                         : "bg-[#f5e8e8] text-[#c85c3c]"
-                    }`}>
+                      }`}>
                       {step.agreesWithAgent1 ? "✓ Agrees" : "✗ Disagrees"}
                     </span>
                   )}
@@ -336,22 +329,20 @@ function ActivityPanel({
             )}
 
             {step.type === "verdict" && (
-              <div className={`rounded-xl border-2 p-4 shadow-sm ${
-                step.verdict === "SAFE"
+              <div className={`rounded-xl border-2 p-4 shadow-sm ${step.verdict === "SAFE"
                   ? "border-[#4a9a4a]/30 bg-gradient-to-br from-[#f0faf0] to-[#e8f5e8]"
                   : step.verdict === "MALICIOUS"
                     ? "border-[#e85c5c]/30 bg-gradient-to-br from-[#faf0f0] to-[#f5e8e8]"
                     : "border-[#d4a03c]/30 bg-gradient-to-br from-[#fafaf0] to-[#f5f0e8]"
-              }`}>
+                }`}>
                 <div className="flex items-center gap-2 mb-3 flex-wrap">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-[#8a8580]">
                     {step.label}
                   </span>
-                  <span className={`rounded-md px-3 py-1 text-[11px] font-bold uppercase text-white shadow-sm ${
-                    step.verdict === "SAFE" ? "bg-[#4a9a4a]"
+                  <span className={`rounded-md px-3 py-1 text-[11px] font-bold uppercase text-white shadow-sm ${step.verdict === "SAFE" ? "bg-[#4a9a4a]"
                       : step.verdict === "MALICIOUS" ? "bg-[#e85c5c]"
                         : "bg-[#d4a03c]"
-                  }`}>
+                    }`}>
                     {step.verdict}
                   </span>
                   {step.riskScore !== undefined && (
@@ -454,11 +445,10 @@ function CodeViewer({
           {fileView.lines.map((line) => (
             <div
               key={line.num}
-              className={`flex ${
-                line.highlighted
+              className={`flex ${line.highlighted
                   ? "bg-[#fde8e8] border-l-2 border-[#e85c5c]"
                   : "border-l-2 border-transparent hover:bg-[#f7f3ee]"
-              }`}
+                }`}
             >
               <span className="inline-block w-12 flex-shrink-0 select-none pr-4 text-right text-[12px] text-[#b8b3ac]">
                 {line.num}
@@ -521,15 +511,13 @@ function FilesPanel({
             key={`file-${fi}-${f.path}`}
             type="button"
             onClick={() => !f.isDir && onFileClick(f.path)}
-            className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-[#e8e4de] ${
-              f.isDir ? "cursor-default" : ""
-            } ${f.isDir ? "pl-2" : "pl-5"}`}
+            className={`flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left transition hover:bg-[#e8e4de] ${f.isDir ? "cursor-default" : ""
+              } ${f.isDir ? "pl-2" : "pl-5"}`}
           >
             <span className="text-[10px]">{f.isDir ? "📁" : "📄"}</span>
             {f.risk !== null && (
-              <span className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${
-                f.risk >= 7 ? "bg-[#e85c5c]" : f.risk >= 4 ? "bg-[#d4a03c]" : "bg-[#4a9a4a]"
-              }`} />
+              <span className={`inline-block h-2 w-2 flex-shrink-0 rounded-full ${f.risk >= 7 ? "bg-[#e85c5c]" : f.risk >= 4 ? "bg-[#d4a03c]" : "bg-[#4a9a4a]"
+                }`} />
             )}
             <span className="flex-1 text-[13px] font-mono text-[#1a1a1a] truncate">{f.name}</span>
             {f.isEntry && (
@@ -744,7 +732,7 @@ export default function Check() {
                   // Track audit phases for progress bar
                   const lbl = event.label;
                   if (lbl.includes("Resolving")) setAuditPhase(1);
-                  else if (lbl.includes("Scanning")) setAuditPhase(2);
+                  else if (lbl.includes("Scanning") || lbl.includes("Extracting")) setAuditPhase(2);
                   else if (lbl.includes("Skill Router")) setAuditPhase(3);
                   else if (lbl.includes("Analyzing")) setAuditPhase(4);
                   else if (lbl.includes("Verifier")) setAuditPhase(6);
@@ -952,15 +940,27 @@ export default function Check() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, pkgName]);
 
-  // Progress is based on audit pipeline phases, not step count
-  const progress = finalVerdict
-    ? 100
-    : isAuditing
-      ? Math.min(95, Math.round((auditPhase / totalAuditPhases) * 100))
-      : 0;
-
   // Files scanned = files in the right panel that have been processed by agents
   const filesScannedCount = files.filter((f) => f.risk !== null).length;
+  const scanProgress = totalPackageFiles > 0 ? (filesScannedCount / totalPackageFiles) * 100 : 0;
+
+  let calculatedProgress = 0;
+  if (finalVerdict) {
+    calculatedProgress = 100;
+  } else if (isAuditing) {
+    if (auditPhase <= 3) {
+      // Phases 1, 2, 3 -> 10% to 30%
+      calculatedProgress = (auditPhase / 3) * 30;
+    } else if (auditPhase === 4 || auditPhase === 5) {
+      // Analyzing phase -> 30% base + up to 50% from file scanning
+      calculatedProgress = 30 + (scanProgress * 0.5);
+    } else {
+      // Verifier, tie-breaker -> 80% to 95%
+      const remainingPhases = Math.max(1, auditPhase - 5);
+      calculatedProgress = 80 + (remainingPhases / 3) * 15;
+    }
+  }
+  const progress = finalVerdict ? 100 : Math.min(98, Math.round(calculatedProgress));
 
   async function handleFileClick(filePath: string) {
     // If file already loaded, just switch to it
@@ -1040,6 +1040,7 @@ export default function Check() {
           filesScanned={filesScannedCount}
           filesTotal={totalPackageFiles || files.length}
           progress={progress}
+          auditPhase={auditPhase}
         />
 
         <div className="flex flex-1 overflow-hidden">

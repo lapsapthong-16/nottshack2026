@@ -29,7 +29,7 @@ export async function fetchPackageCode(name: string, version: string) {
   const codeFiles = allFiles
     .filter(
       (f) =>
-        (f.size ?? 0) < 50000 &&
+        (f.size ?? 0) < 400000 && // Increased max absolute limit to 400KB
         (f.path.endsWith(".js") ||
           f.path.endsWith(".ts") ||
           f.path.endsWith(".json") ||
@@ -51,24 +51,32 @@ export async function fetchPackageCode(name: string, version: string) {
 
   for (const file of codeFiles) {
     const fileSize = file.size ?? 0;
-    if (currentChunk.length + fileSize > MAX_TOTAL_SIZE) {
-      if (currentChunk.length > 0) {
+    
+    // If adding this file exceeds the normal chunk limit, flush the current chunk first
+    if (currentChunk.length + fileSize > MAX_TOTAL_SIZE && currentChunk.length > 0) {
         chunks.push(currentChunk);
         chunkFileMap.push(currentChunkFiles);
-      }
-      currentChunk = "";
-      currentChunkFiles = [];
+        currentChunk = "";
+        currentChunkFiles = [];
     }
-    if (fileSize > MAX_TOTAL_SIZE) continue;
 
     try {
       const fileRes = await fetch(`https://unpkg.com/${name}@${version}${file.path}`);
       if (fileRes.ok) {
         const content = await fileRes.text();
-        currentChunk += `\n--- FILE: ${file.path} ---\n${content}\n`;
-        currentChunkFiles.push(file.path);
-        fileContentMap[file.path] = content;
-        fetchedFiles.push({ path: file.path, size: fileSize });
+        
+        // If the file is extremely large, give it its own dedicated chunk for a single agent
+        if (content.length > MAX_TOTAL_SIZE) {
+            chunks.push(`\n--- FILE: ${file.path} ---\n${content}\n`);
+            chunkFileMap.push([file.path]);
+            fileContentMap[file.path] = content;
+            fetchedFiles.push({ path: file.path, size: content.length });
+        } else {
+            currentChunk += `\n--- FILE: ${file.path} ---\n${content}\n`;
+            currentChunkFiles.push(file.path);
+            fileContentMap[file.path] = content;
+            fetchedFiles.push({ path: file.path, size: content.length });
+        }
       }
     } catch {
       // skip failed files

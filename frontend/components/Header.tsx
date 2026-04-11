@@ -5,6 +5,7 @@ type HeaderProps = {
   filesScanned?: number;
   filesTotal?: number;
   progress?: number; // 0-100
+  auditPhase?: number;
 };
 
 export default function Header({
@@ -12,8 +13,17 @@ export default function Header({
   filesScanned,
   filesTotal,
   progress,
+  auditPhase,
 }: HeaderProps) {
   const showProgress = packageName !== undefined;
+
+  const isStep1Done = (auditPhase ?? 0) >= 6;
+  const isStep2Done = (auditPhase ?? 0) >= 7;
+  const isStep3Done = progress === 100;
+
+  const isStep1Active = (auditPhase ?? 0) >= 1 && !isStep1Done;
+  const isStep2Active = isStep1Done && !isStep2Done;
+  const isStep3Active = isStep2Done && !isStep3Done;
 
   return (
     <header className="flex items-center border-b border-[#e0dbd4] bg-[#f0ebe4] px-6 py-3">
@@ -47,7 +57,7 @@ export default function Header({
       </nav>
 
       {showProgress && (
-        <div className="ml-auto flex items-center gap-4">
+        <div className="ml-auto flex items-center gap-5">
           <div className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 rounded-full bg-[#4ade80]" />
             <span className="text-sm font-medium text-[#1a1a1a]">
@@ -55,25 +65,32 @@ export default function Header({
             </span>
           </div>
 
-          {/* Progress bar — smooth continuous */}
-          <div className="flex items-center gap-2">
-            <div className="h-[4px] w-32 rounded-full bg-[#d6d0c8] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[#4ade80]"
-                style={{
-                  width: `${progress ?? 0}%`,
-                  transition: "width 0.6s ease-in-out",
-                }}
-              />
+          {/* 3-Point Progress Indicator */}
+          <div className="flex items-center gap-1.5" title="1. Scanning & Analysis, 2. Verification, 3. Summary">
+            {/* Point 1: Auditor Agent */}
+            <div className={`relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-colors ${isStep1Done ? "bg-[#4ade80]" : isStep1Active ? "bg-[#e8a85c]" : "bg-[#d6d0c8]"}`}>
+              {isStep1Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
             </div>
-            <span className="text-[11px] font-medium text-[#8a8580] tabular-nums">
-              {progress ?? 0}%
-            </span>
+            <div className={`h-[2px] w-6 transition-colors duration-500 ${isStep1Done ? "bg-[#4ade80]" : "bg-[#d6d0c8]"}`} />
+
+            {/* Point 2: Verifier Agent */}
+            <div className={`relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-colors ${isStep2Done ? "bg-[#4ade80]" : isStep2Active ? "bg-[#e8a85c]" : "bg-[#d6d0c8]"}`}>
+               {isStep2Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
+            </div>
+            <div className={`h-[2px] w-6 transition-colors duration-500 ${isStep2Done ? "bg-[#4ade80]" : "bg-[#d6d0c8]"}`} />
+
+            {/* Point 3: Summary / Finalization */}
+            <div className={`relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-colors ${isStep3Done ? "bg-[#4ade80]" : isStep3Active ? "bg-[#e8a85c]" : "bg-[#d6d0c8]"}`}>
+               {isStep3Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
+            </div>
           </div>
 
           {filesTotal !== undefined && (
-            <span className="text-xs text-[#8a8580]">
-              {filesScanned ?? 0}/{filesTotal} files
+            <span className="text-xs font-medium text-[#8a8580] w-[130px] text-right">
+              {isStep3Done ? "Complete" :
+               isStep3Active ? "Summarizing..." :
+               isStep2Active ? "Verifying..." :
+               `Scanning ${filesScanned ?? 0}/${filesTotal} files`}
             </span>
           )}
 
