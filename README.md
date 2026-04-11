@@ -42,6 +42,86 @@ Validus is a decentralized AI-powered security audit platform that scans npm pac
    - **Phase 4: Sandbox Verification** — Execute package in an isolated sandbox to confirm behavior
 5. **On-Chain Report** — Results are stored on DCAI chain with full audit trail
 
+---
+
+## AI Agent Pipeline — How It Works Under the Hood
+
+Validus uses a multi-phase AI agent pipeline where each phase builds on the previous one. No single AI makes the final call — instead, multiple agents work independently and reach consensus, making it extremely difficult for malicious code to slip through.
+
+### Phase 1: Dependency Scan
+
+The first agent crawls the package's entire dependency tree — every direct and transitive dependency is mapped. It checks each one against known vulnerability databases (CVE, OSV, GitHub Advisories) and flags:
+
+- Known malicious packages (typosquats, hijacked packages)
+- Dependencies with install scripts (`preinstall`, `postinstall`) that execute arbitrary code
+- Unusual network calls during installation
+- Packages that access `process.env`, `fs`, or `child_process` without clear justification
+
+**Output:** A full dependency graph with risk annotations for each node.
+
+### Phase 2: Swarm AI Analysis + Risk Scoring
+
+Multiple independent AI agents analyze the source code in parallel. Each agent specializes in a different attack vector:
+
+- **Agent A (Behavioral Analysis)** — Looks for code that behaves differently from what the package description claims. e.g., a "color formatting" library that reads environment variables.
+- **Agent B (Pattern Matching)** — Detects known malicious patterns: obfuscated code, base64-encoded payloads, dynamic `eval()` calls, encoded URLs pointing to external servers.
+- **Agent C (Diff Analysis)** — Compares the current version against previous versions. Flags any new code that introduces file system access, network calls, or crypto operations that didn't exist before.
+
+Each agent produces an independent risk score (0.0 – 10.0). The scores are aggregated using a weighted consensus algorithm:
+
+| Score Range | Rating | Meaning |
+|-------------|--------|---------|
+| 0.0 – 1.9 | Safe | No suspicious behavior detected |
+| 2.0 – 4.9 | Low | Minor concerns, likely false positives |
+| 5.0 – 6.9 | Warning | Suspicious patterns found, manual review recommended |
+| 7.0 – 8.9 | High | Likely malicious behavior detected |
+| 9.0 – 10.0 | Critical | Confirmed malicious patterns, do not install |
+
+**Output:** Per-file risk scores, flagged code lines, and a consensus risk rating.
+
+### Phase 3: Exploit Test Generation
+
+For any findings rated Warning or above, the pipeline automatically generates exploit test cases:
+
+- If the agent found a suspicious `eval()`, it generates a test that triggers it with a crafted payload
+- If network exfiltration is suspected, it generates a test that monitors outbound connections
+- If environment variable access is detected, it checks what specific variables are read and where they're sent
+
+These tests are executable — they prove whether a vulnerability is theoretical or actually exploitable.
+
+**Output:** Generated test files with pass/fail results for each suspected vulnerability.
+
+### Phase 4: Sandbox Verification
+
+The final phase runs the package in a fully isolated sandbox environment:
+
+- Network access is monitored and restricted (all outbound calls are logged)
+- File system access is tracked (reads/writes outside the package directory are flagged)
+- Process spawning is monitored (`child_process.exec`, `spawn` calls)
+- Memory and CPU usage are profiled for cryptomining behavior
+
+The sandbox confirms or denies the findings from Phase 2 and Phase 3 with actual runtime evidence.
+
+**Output:** Runtime behavior log, confirmed/denied findings, final risk score.
+
+### Final Report
+
+All four phases are combined into a single audit report that is:
+
+1. **Stored on DCAI L3** via the `ValidusReport` smart contract — immutable and publicly queryable
+2. **Linked to the auditor's stake** — if the report is later proven wrong, the auditor's tDCAI stake is slashed
+3. **Queryable by anyone** — call `getReport(id)` or browse via the explorer
+
+```
+Report #1 — ValidusStaking.sol
+Overall Score: 72/100 (Warning)
+Findings: 1 Critical, 2 High, 3 Medium, 4 Low, 2 Info
+Status: FAILED
+Explorer: http://139.180.140.143:3002/tx/0x6b0c1a...
+```
+
+---
+
 ### Resolution & Dispute System
 
 When a potential threat is detected:
@@ -97,14 +177,14 @@ DCAI L3 is the EVM-compatible execution layer where all financial and audit logi
 
 | Contract | Address | Purpose |
 |----------|---------|---------|
-| **ValidusStaking** | `0x47423b0286099CFF00B6Bc2830674CED8caf2BFf` | Top-up credits, staking, and slashing |
+| **ValidusStaking** | `0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842` | Top-up credits, staking, and slashing |
 | **ValidusReport** | `0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da` | On-chain audit report storage & querying |
 
 ### Key Transactions
 
 | Description | Tx Hash |
 |------------|---------|
-| ValidusStaking deployment | Contract created at `0x47423b0286099CFF00B6Bc2830674CED8caf2BFf` |
+| ValidusStaking deployment | Contract created at `0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842` |
 | ValidusReport deployment | Contract created at `0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da` |
 | Code quality report submitted | `0x6b0c1a1a972ef09144be37dceca056e4ec3b262c6cd700577e02bcaa5ba47668` |
 | Top-up test (0.001 tDCAI) | Confirmed via Hardhat — credits: 0.005 tDCAI |

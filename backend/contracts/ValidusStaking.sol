@@ -8,6 +8,7 @@ contract ValidusStaking {
     event TopUp(address indexed user, uint256 amount);
     event Staked(address indexed user, uint256 amount);
     event Slashed(address indexed user, uint256 amount);
+    event Burned(address indexed user, uint256 amount);
 
     function topUp() external payable {
         require(msg.value > 0, "Send tDCAI");
@@ -32,6 +33,12 @@ contract ValidusStaking {
         require(amount > 0, "Nothing to slash");
         stakes[user] = 0;
         emit Slashed(user, amount);
+    }
+
+    function burn(uint256 amount) external {
+        require(credits[msg.sender] >= amount, "Not enough credits");
+        credits[msg.sender] -= amount;
+        emit Burned(msg.sender, amount);
     }
 
     function getCredits(address user) external view returns (uint256) {
