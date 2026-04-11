@@ -1,3 +1,5 @@
+![Validus](frontend/public/val.png)
+
 # Validus — AI-Powered Security Audit Platform
 
 ## The Problem: Open Source Supply Chain Attacks
