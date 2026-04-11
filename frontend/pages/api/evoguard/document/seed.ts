@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { Document } from "@dashevo/evo-sdk";
-import { createClient } from "../../../../setupDashClient.mjs";
+import { createClient } from "@/setupDashClient.mjs";
 import { getEvoguardConfig } from "../../../../lib/server/evoguardConfig";
 import { resolveWritableIdentityContext } from "../../../../lib/server/identityCredentialService";
 import sampleReports from "../../../../data/sample-reports.json";

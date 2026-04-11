@@ -1,4 +1,4 @@
-import { createClient } from "../../setupDashClient.mjs";
+import { createClient } from "@/setupDashClient.mjs";
 import { getEvoguardConfig } from "./evoguardConfig";
 import { resolveWritableIdentityContext } from "./identityCredentialService";
 

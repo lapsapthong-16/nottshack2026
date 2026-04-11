@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { setupDashClient } from "../../../setupDashClient.mjs";
+import { setupDashClient } from "@/setupDashClient.mjs";
 
 type SuccessResponse = {
   ok: true;

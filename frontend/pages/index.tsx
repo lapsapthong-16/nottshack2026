@@ -20,7 +20,7 @@ export default function Landing() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null as any);
 
   // ── Version dropdown state ──
   const [versions, setVersions] = useState<string[]>(["latest"]);

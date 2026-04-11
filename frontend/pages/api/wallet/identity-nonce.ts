@@ -38,11 +38,11 @@ export default async function handler(
         ok: true,
         identityId,
         nonce: Number(identityNonce),
-        balance: balance.toString(),
+        balance: balance?.toString() ?? "0",
       });
     } finally {
-      if (typeof sdk.disconnect === "function") {
-        await sdk.disconnect();
+      if (typeof (sdk as any).disconnect === "function") {
+        await (sdk as any).disconnect();
       }
     }
   } catch (error) {

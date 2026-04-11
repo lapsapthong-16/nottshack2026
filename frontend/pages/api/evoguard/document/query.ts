@@ -1,5 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { createClient } from "../../../../setupDashClient.mjs";
+import { createClient } from "@/setupDashClient.mjs";
 import { getEvoguardConfig } from "../../../../lib/server/evoguardConfig";
 
 export default async function handler(
@@ -30,11 +30,13 @@ export default async function handler(
       queryOpts.where = [["malwareDetected", "==", true]];
     }
 
-    const results = await sdk.documents.query(queryOpts);
+    const results = await sdk.documents.query(queryOpts as any);
     const docs: Record<string, unknown>[] = [];
 
     for (const [id, doc] of results) {
-      docs.push({ id: id.toString(), ...doc.toJSON() });
+      if (doc) {
+        docs.push({ id: id.toString(), ...doc.toJSON() });
+      }
     }
 
     return res.status(200).json({ ok: true, count: docs.length, documents: docs });
