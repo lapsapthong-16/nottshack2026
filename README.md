@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://img.shields.io/badge/V_A_L_I_D_U_S-142c4f?style=for-the-badge&logoColor=c3af97" alt="Validus Banner" height="45" />
+  <img src="https://img.shields.io/badge/V_A_L_I_D_U_S-142c4f?style=for-the-badge&logoColor=c3af97" alt="Validus Banner" height="75" />
 
   <p>
     <strong>A high-end, production-grade Dash Platform prototype for publishing and retrieving decentralized package audit metadata.</strong>
