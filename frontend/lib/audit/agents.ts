@@ -112,9 +112,9 @@ ${chunk}
 Respond in this EXACT JSON format (no markdown, no code fences):
 {
   "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "riskScore": <number 0-10>,
+  "overallSeverity": "none" | "low" | "medium" | "high",
   "findings": [
-    { "file": "<filepath>", "risk": <number 0-10>, "confidence": "HIGH" | "MEDIUM", "description": "<brief description>", "lineNumbers": [<line numbers where the issue appears>] }
+    { "file": "<filepath>", "severity": "none" | "low" | "medium" | "high", "confidence": "HIGH" | "MEDIUM", "description": "<brief description>", "lineNumbers": [<line numbers where the issue appears>] }
   ],
   "summary": "<2-3 sentence overall summary for this chunk>"
 }`;
@@ -154,7 +154,7 @@ ${allAnalyses.join("\n\n---\n\n")}
 Now provide a FINAL combined security assessment. Respond in this EXACT JSON format (no markdown, no code fences):
 {
   "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "riskScore": <number 0-10>,
+  "overallSeverity": "none" | "low" | "medium" | "high",
   "summary": "<3-5 sentence final security assessment>",
   "recommendations": ["<action item 1>", "<action item 2>"]
 }`;
@@ -209,12 +209,12 @@ Use CONFIDENCE LEVELS to assess each finding:
 
 You must:
 1. Independently analyze the source code below for security issues
-2. Compare your findings against Agent 1's analysis
-3. Identify any FALSE POSITIVES (things Agent 1 flagged that are actually safe)
-4. Identify any FALSE NEGATIVES (real threats Agent 1 missed)
-5. Confirm or challenge Agent 1's verdict
+2. Compare your findings against the Auditor Agent's analysis
+3. Identify any FALSE POSITIVES (things the Auditor Agent flagged that are actually safe)
+4. Identify any FALSE NEGATIVES (real threats the Auditor Agent missed)
+5. Confirm or challenge the Auditor Agent's verdict
 ${securitySkill}
-=== AGENT 1's ANALYSIS (CHUNK ${chunkIndex + 1}/${totalChunks}) ===
+=== AUDITOR AGENT's ANALYSIS (CHUNK ${chunkIndex + 1}/${totalChunks}) ===
 ${analyzerResult}
 
 === PACKAGE SOURCE CODE (CHUNK ${chunkIndex + 1}/${totalChunks}) ===
@@ -223,14 +223,14 @@ ${chunk}
 Respond in this EXACT JSON format (no markdown, no code fences):
 {
   "independentVerdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "independentRiskScore": <number 0-10>,
+  "independentSeverity": "none" | "low" | "medium" | "high",
   "agreesWithAgent1": true | false,
   "falsePositives": ["<description of incorrectly flagged items>"],
   "falseNegatives": ["<description of missed threats>"],
   "findings": [
-    { "file": "<filepath>", "risk": <number 0-10>, "confidence": "HIGH" | "MEDIUM", "description": "<finding>" }
+    { "file": "<filepath>", "severity": "none" | "low" | "medium" | "high", "confidence": "HIGH" | "MEDIUM", "description": "<finding>", "lineNumbers": [<line numbers where the issue appears>] }
   ],
-  "verificationNotes": "<2-3 sentences explaining your independent assessment and where you agree/disagree with Agent 1>"
+  "verificationNotes": "<2-3 sentences explaining your independent assessment and where you agree/disagree with the Auditor Agent>"
 }`;
 
     const verifierResponse = await verifierSession.sendAndWait({ prompt: verifierPrompt });
@@ -262,18 +262,18 @@ export async function runAgent2FinalVerdict(
         onPermissionRequest: approveAll,
       });
 
-      const verifierFinalPrompt = `You are the VERIFIER agent. You have independently reviewed the npm package "${name}@${resolvedVersion}" and cross-checked Agent 1's analysis.
+      const verifierFinalPrompt = `You are the VERIFICATION AGENT. You have independently reviewed the npm package "${name}@${resolvedVersion}" and cross-checked the Auditor Agent's analysis.
 
-=== AGENT 1's FINAL VERDICT ===
+=== AUDITOR AGENT's FINAL VERDICT ===
 ${JSON.stringify(agent1Verdict, null, 2)}
 
 === YOUR CHUNK-BY-CHUNK VERIFICATION ===
 ${verifierAnalyses.join("\n\n---\n\n")}
 
-Now provide your FINAL verification report. If you disagree with Agent 1, explain why. Respond in this EXACT JSON format (no markdown, no code fences):
+Now provide your FINAL verification report. If you disagree with the Auditor Agent, explain why. Respond in this EXACT JSON format (no markdown, no code fences):
 {
   "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "riskScore": <number 0-10>,
+  "overallSeverity": "none" | "low" | "medium" | "high",
   "agreesWithAgent1": true | false,
   "confidence": <number 0-100>,
   "summary": "<3-5 sentence verification summary>",

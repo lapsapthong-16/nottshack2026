@@ -7,24 +7,28 @@ type ScanListItem = {
   scanId: string;
   name: string;
   version: string;
-  risk: number;
+  risk: string;
   files: number;
   flags: number;
   date: string;
 };
 
-function riskColor(risk: number): string {
-  if (risk >= 8) return "bg-[#e85c5c] text-white";
-  if (risk >= 5) return "bg-[#e8a85c] text-white";
-  if (risk >= 2) return "bg-[#e8d85c] text-[#1a1a1a]";
-  return "bg-[#4ade80] text-[#1a1a1a]";
+function riskColor(risk: string): string {
+  switch (risk) {
+    case "high":   return "bg-[#e85c5c] text-white";
+    case "medium": return "bg-[#e8a85c] text-white";
+    case "low":    return "bg-[#e8d85c] text-[#1a1a1a]";
+    default:       return "bg-[#4ade80] text-[#1a1a1a]";
+  }
 }
 
-function riskLabel(risk: number): string {
-  if (risk >= 8) return "Critical";
-  if (risk >= 5) return "Warning";
-  if (risk >= 2) return "Low";
-  return "Safe";
+function riskLabel(risk: string): string {
+  switch (risk) {
+    case "high":   return "High";
+    case "medium": return "Medium";
+    case "low":    return "Low";
+    default:       return "None";
+  }
 }
 
 export default function Report() {
@@ -51,10 +55,6 @@ export default function Report() {
   const totalScanned = scans.length;
   const totalFlagged = scans.filter((p) => p.flags > 0).length;
   const totalSafe = totalScanned - totalFlagged;
-  const avgRisk =
-    totalScanned > 0
-      ? scans.reduce((sum, p) => sum + p.risk, 0) / totalScanned
-      : 0;
 
   return (
     <>
@@ -101,10 +101,10 @@ export default function Report() {
             </div>
             <div className="rounded-xl border border-[#e0dbd4] bg-white p-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                Avg risk
+                Total flags
               </p>
               <p className="mt-2 text-3xl font-bold text-[#1a1a1a]">
-                {loading ? "—" : avgRisk.toFixed(1)}
+                {loading ? "—" : scans.reduce((sum, p) => sum + p.flags, 0)}
               </p>
             </div>
           </div>
@@ -175,10 +175,7 @@ export default function Report() {
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${riskColor(pkg.risk)}`}
                         >
-                          {pkg.risk}
-                          <span className="text-[10px] font-medium opacity-80">
-                            {riskLabel(pkg.risk)}
-                          </span>
+                          {riskLabel(pkg.risk)}
                         </span>
                       </td>
                       <td className="px-5 py-3.5 text-[#6b6b6b]">
