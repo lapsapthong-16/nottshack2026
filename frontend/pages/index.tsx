@@ -190,22 +190,51 @@ export default function Landing() {
       console.log("[Payment] Step 5: Requesting extension to sign & broadcast...");
       console.log("[Payment]   (The extension popup should appear now — please approve the transaction)");
       
-      await win.dashPlatformExtension.signer.signAndBroadcast(stateTransition);
+      let paymentSuccess = false;
+      let paymentError = "";
+      try {
+        await win.dashPlatformExtension.signer.signAndBroadcast(stateTransition);
+        paymentSuccess = true;
+      } catch (signErr: any) {
+        paymentError = signErr?.message || "Unknown signing error";
+        console.error("❌ Payment signing failed:", paymentError);
+      }
 
-      // ── Step 6: SUCCESS — payment confirmed ──
-      console.log("═══════════════════════════════════════════════════");
-      console.log("  ✅ PAYMENT SUCCESSFUL!");
-      console.log("  Sender:    ", identityId);
-      console.log("  Recipient: ", recipientId);
-      console.log("  Amount:     0.01 DASH (1,000,000,000 credits)");
-      console.log("═══════════════════════════════════════════════════");
-
-      // Proceed to audit
-      void router.push({ pathname: "/check", query });
+      if (paymentSuccess) {
+        // ── Step 6: SUCCESS — payment confirmed ──
+        console.log("═══════════════════════════════════════════════════");
+        console.log("  ✅ PAYMENT SUCCESSFUL!");
+        console.log("  Sender:    ", identityId);
+        console.log("  Recipient: ", recipientId);
+        console.log("  Amount:     0.01 DASH (1,000,000,000 credits)");
+        console.log("═══════════════════════════════════════════════════");
+        void router.push({ pathname: "/check", query });
+      } else {
+        // Payment failed — in dev mode, offer skip option
+        if (process.env.NODE_ENV === "development") {
+          const skip = window.confirm(
+            `Payment failed: ${paymentError}\n\n[DEV MODE] Skip payment and proceed to audit anyway?`
+          );
+          if (skip) {
+            void router.push({ pathname: "/check", query });
+            return;
+          }
+        }
+        alert("Payment failed or was cancelled: " + paymentError + "\n\nThe audit cannot proceed without payment.");
+      }
 
     } catch (e: any) {
       console.error("❌ Payment Error:", e);
-      alert("Payment failed or was cancelled: " + (e.message || "Unknown error") + "\n\nThe audit cannot proceed without payment.");
+      if (process.env.NODE_ENV === "development") {
+        const skip = window.confirm(
+          `Payment error: ${e.message || "Unknown error"}\n\n[DEV MODE] Skip payment and proceed to audit anyway?`
+        );
+        if (skip) {
+          void router.push({ pathname: "/check", query });
+          return;
+        }
+      }
+      alert("Payment failed: " + (e.message || "Unknown error"));
     } finally {
       setIsProcessingPayment(false);
     }

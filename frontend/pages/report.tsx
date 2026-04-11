@@ -1,8 +1,10 @@
+import { useState, useEffect } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import Header from "@/components/Header";
 
-type ScannedPackage = {
+type ScanListItem = {
+  scanId: string;
   name: string;
   version: string;
   risk: number;
@@ -10,73 +12,6 @@ type ScannedPackage = {
   flags: number;
   date: string;
 };
-
-const scannedPackages: ScannedPackage[] = [
-  {
-    name: "event-stream",
-    version: "3.3.6",
-    risk: 10,
-    files: 8,
-    flags: 3,
-    date: "2026-04-10",
-  },
-  {
-    name: "ua-parser-js",
-    version: "0.7.29",
-    risk: 8,
-    files: 5,
-    flags: 2,
-    date: "2026-04-09",
-  },
-  {
-    name: "colors",
-    version: "1.4.1",
-    risk: 9,
-    files: 6,
-    flags: 2,
-    date: "2026-04-09",
-  },
-  {
-    name: "node-ipc",
-    version: "10.1.0",
-    risk: 10,
-    files: 12,
-    flags: 4,
-    date: "2026-04-08",
-  },
-  {
-    name: "lodash",
-    version: "4.17.21",
-    risk: 0,
-    files: 42,
-    flags: 0,
-    date: "2026-04-08",
-  },
-  {
-    name: "express",
-    version: "4.18.2",
-    risk: 1,
-    files: 35,
-    flags: 0,
-    date: "2026-04-07",
-  },
-  {
-    name: "chalk",
-    version: "5.3.0",
-    risk: 0,
-    files: 4,
-    flags: 0,
-    date: "2026-04-07",
-  },
-  {
-    name: "flatmap-stream",
-    version: "0.1.1",
-    risk: 10,
-    files: 3,
-    flags: 3,
-    date: "2026-04-06",
-  },
-];
 
 function riskColor(risk: number): string {
   if (risk >= 8) return "bg-[#e85c5c] text-white";
@@ -93,11 +28,33 @@ function riskLabel(risk: number): string {
 }
 
 export default function Report() {
-  const totalScanned = scannedPackages.length;
-  const totalFlagged = scannedPackages.filter((p) => p.flags > 0).length;
+  const [scans, setScans] = useState<ScanListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/audit/scan")
+      .then((r) => {
+        if (!r.ok) throw new Error(`Failed to load scans (${r.status})`);
+        return r.json();
+      })
+      .then((data: ScanListItem[]) => {
+        setScans(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message);
+        setLoading(false);
+      });
+  }, []);
+
+  const totalScanned = scans.length;
+  const totalFlagged = scans.filter((p) => p.flags > 0).length;
   const totalSafe = totalScanned - totalFlagged;
   const avgRisk =
-    scannedPackages.reduce((sum, p) => sum + p.risk, 0) / totalScanned;
+    totalScanned > 0
+      ? scans.reduce((sum, p) => sum + p.risk, 0) / totalScanned
+      : 0;
 
   return (
     <>
@@ -123,7 +80,7 @@ export default function Report() {
                 Total scanned
               </p>
               <p className="mt-2 text-3xl font-bold text-[#1a1a1a]">
-                {totalScanned}
+                {loading ? "—" : totalScanned}
               </p>
             </div>
             <div className="rounded-xl border border-[#e0dbd4] bg-white p-5">
@@ -131,7 +88,7 @@ export default function Report() {
                 Flagged
               </p>
               <p className="mt-2 text-3xl font-bold text-[#e85c5c]">
-                {totalFlagged}
+                {loading ? "—" : totalFlagged}
               </p>
             </div>
             <div className="rounded-xl border border-[#e0dbd4] bg-white p-5">
@@ -139,7 +96,7 @@ export default function Report() {
                 Safe
               </p>
               <p className="mt-2 text-3xl font-bold text-[#2d7a2d]">
-                {totalSafe}
+                {loading ? "—" : totalSafe}
               </p>
             </div>
             <div className="rounded-xl border border-[#e0dbd4] bg-white p-5">
@@ -147,90 +104,112 @@ export default function Report() {
                 Avg risk
               </p>
               <p className="mt-2 text-3xl font-bold text-[#1a1a1a]">
-                {avgRisk.toFixed(1)}
+                {loading ? "—" : avgRisk.toFixed(1)}
               </p>
             </div>
           </div>
 
+          {/* Loading / Error */}
+          {loading && (
+            <div className="mt-12 text-center text-sm text-[#8a8580]">
+              Loading audit data…
+            </div>
+          )}
+          {error && (
+            <div className="mt-12 rounded-xl border border-[#e85c5c33] bg-[#e85c5c11] p-4 text-sm text-[#e85c5c]">
+              {error}
+            </div>
+          )}
+          {!loading && !error && scans.length === 0 && (
+            <div className="mt-12 text-center">
+              <p className="text-sm text-[#8a8580]">No audits yet.</p>
+              <Link
+                href="/"
+                className="mt-3 inline-block text-sm font-medium text-[#b8a9c8] hover:text-[#8a7a9a]"
+              >
+                Run your first audit →
+              </Link>
+            </div>
+          )}
+
           {/* Package table */}
-          <div className="mt-8 overflow-hidden rounded-xl border border-[#e0dbd4] bg-white">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#e0dbd4] bg-[#f7f3ee]">
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                    Package
-                  </th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                    Version
-                  </th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                    Risk
-                  </th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                    Files
-                  </th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                    Flags
-                  </th>
-                  <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
-                    Date
-                  </th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {scannedPackages.map((pkg) => (
-                  <tr
-                    key={`${pkg.name}@${pkg.version}`}
-                    className="border-b border-[#f0ebe4] transition hover:bg-[#faf8f5]"
-                  >
-                    <td className="px-5 py-3.5 font-medium text-[#1a1a1a]">
-                      {pkg.name}
-                    </td>
-                    <td className="px-5 py-3.5 font-mono text-xs text-[#6b6b6b]">
-                      {pkg.version}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${riskColor(pkg.risk)}`}
-                      >
-                        {pkg.risk}
-                        <span className="text-[10px] font-medium opacity-80">
-                          {riskLabel(pkg.risk)}
-                        </span>
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-[#6b6b6b]">
-                      {pkg.files}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {pkg.flags > 0 ? (
-                        <span className="font-medium text-[#e85c5c]">
-                          {pkg.flags}
-                        </span>
-                      ) : (
-                        <span className="text-[#a8a09a]">0</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5 text-xs text-[#a8a09a]">
-                      {pkg.date}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Link
-                        href={{
-                          pathname: "/check",
-                          query: { name: pkg.name },
-                        }}
-                        className="text-xs font-medium text-[#b8a9c8] transition hover:text-[#8a7a9a]"
-                      >
-                        View audit
-                      </Link>
-                    </td>
+          {!loading && scans.length > 0 && (
+            <div className="mt-8 overflow-hidden rounded-xl border border-[#e0dbd4] bg-white">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[#e0dbd4] bg-[#f7f3ee]">
+                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
+                      Package
+                    </th>
+                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
+                      Version
+                    </th>
+                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
+                      Risk
+                    </th>
+                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
+                      Files
+                    </th>
+                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
+                      Flags
+                    </th>
+                    <th className="px-5 py-3 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#8a8580]">
+                      Date
+                    </th>
+                    <th className="px-5 py-3" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {scans.map((pkg) => (
+                    <tr
+                      key={pkg.scanId}
+                      className="border-b border-[#f0ebe4] transition hover:bg-[#faf8f5]"
+                    >
+                      <td className="px-5 py-3.5 font-medium text-[#1a1a1a]">
+                        {pkg.name}
+                      </td>
+                      <td className="px-5 py-3.5 font-mono text-xs text-[#6b6b6b]">
+                        {pkg.version}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold ${riskColor(pkg.risk)}`}
+                        >
+                          {pkg.risk}
+                          <span className="text-[10px] font-medium opacity-80">
+                            {riskLabel(pkg.risk)}
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-5 py-3.5 text-[#6b6b6b]">
+                        {pkg.files}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {pkg.flags > 0 ? (
+                          <span className="font-medium text-[#e85c5c]">
+                            {pkg.flags}
+                          </span>
+                        ) : (
+                          <span className="text-[#a8a09a]">0</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-xs text-[#a8a09a]">
+                        {pkg.date}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <Link
+                          href={`/report/${pkg.scanId}`}
+                          className="text-xs font-medium text-[#b8a9c8] transition hover:text-[#8a7a9a]"
+                        >
+                          View audit →
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </main>
       </div>
     </>

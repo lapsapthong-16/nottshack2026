@@ -55,28 +55,20 @@ export default function Header({
             </span>
           </div>
 
-          {/* Progress bar */}
-          <div className="flex items-center gap-1">
-            {Array.from({ length: 5 }).map((_, i) => {
-              const segmentProgress = ((progress ?? 0) / 100) * 5;
-              const filled = i < segmentProgress;
-              return (
-                <div key={i} className="flex items-center gap-1">
-                  <div
-                    className={`h-[3px] w-5 rounded-full ${
-                      filled ? "bg-[#4ade80]" : "bg-[#c5c0b8]"
-                    }`}
-                  />
-                  {i < 4 && (
-                    <span
-                      className={`inline-block h-1 w-1 rounded-full ${
-                        filled ? "bg-[#4ade80]" : "bg-[#c5c0b8]"
-                      }`}
-                    />
-                  )}
-                </div>
-              );
-            })}
+          {/* Progress bar — smooth continuous */}
+          <div className="flex items-center gap-2">
+            <div className="h-[4px] w-32 rounded-full bg-[#d6d0c8] overflow-hidden">
+              <div
+                className="h-full rounded-full bg-[#4ade80]"
+                style={{
+                  width: `${progress ?? 0}%`,
+                  transition: "width 0.6s ease-in-out",
+                }}
+              />
+            </div>
+            <span className="text-[11px] font-medium text-[#8a8580] tabular-nums">
+              {progress ?? 0}%
+            </span>
           </div>
 
           {filesTotal !== undefined && (

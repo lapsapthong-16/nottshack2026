@@ -36,4 +36,6 @@ yarn-error.log*
 
 # Misc
 *.log
+logs/
+debug_fetched_code.txt
 .vercel
