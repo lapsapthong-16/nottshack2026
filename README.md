@@ -1,210 +1,128 @@
-<div align="center">
+# Validus — AI-Powered Security Audit Platform
 
-  <img src="https://img.shields.io/badge/V_A_L_I_D_U_S-142c4f?style=for-the-badge&logoColor=c3af97" alt="Validus Banner" height="75" />
+## The Problem: Open Source Supply Chain Attacks
 
-  <p>
-    <strong>A high-end, production-grade Dash Platform prototype for publishing and retrieving decentralized package audit metadata.</strong>
-  </p>
+In 2025, the `colors.js` and `faker.js` npm packages were intentionally sabotaged by their own maintainer, injecting infinite loops and corrupting data for millions of downstream applications. This wasn't an isolated incident — the `event-stream` attack in 2018 injected cryptocurrency-stealing malware into a package with 2 million weekly downloads, and the `ua-parser-js` hijack in 2021 distributed cryptominers to 8 million users.
 
-  <p>
-    <a href="#overview">Overview</a> •
-    <a href="#architecture">Architecture</a> •
-    <a href="#tech-stack">Tech Stack</a> •
-    <a href="#getting-started">Getting Started</a> •
-    <a href="#api-reference">API Reference</a>
-  </p>
+**The core problem:** developers blindly trust open-source dependencies. A single malicious update can cascade through the entire software supply chain, and there is no decentralized, transparent, incentive-aligned system to catch these attacks before they ship.
 
-  <p>
-    <img src="https://img.shields.io/badge/Status-Active_Development-success?style=flat-square" alt="Status" />
-    <img src="https://img.shields.io/badge/Environment-Dash_Testnet-008CE7?style=flat-square&logo=dash" alt="Dash Testnet" />
-    <img src="https://img.shields.io/badge/TypeScript-Strict-007ACC?style=flat-square&logo=typescript" alt="TypeScript" />
-  </p>
-</div>
+## The Solution: Validus
 
-<hr />
+Validus is a decentralized AI-powered security audit platform that scans npm packages for malicious code, vulnerabilities, and supply chain risks. Every audit result is stored on-chain for full transparency, and AI node providers are economically incentivized through staking to deliver accurate, honest audits.
 
-## Overview
+### How It Works
 
-**Validus** is an advanced, production-standard prototype designed to interact seamlessly with the **Dash Platform testnet**. Our core objective is to formulate a decentralized trust anchoring system for package audit metadata. 
+1. **Connect Wallet** — Connect your OKX wallet to DCAI L3 network
+2. **Top Up Credits** — Deposit tDCAI to get access to audit services (credits recorded on-chain)
+3. **Submit Package** — Enter an npm package name (e.g., `color`) to audit
+4. **AI Agent Pipeline** — 4-phase automated analysis:
+   - **Phase 1: Dependency Scan** — Map all dependencies, check for known vulnerabilities
+   - **Phase 2: Swarm AI Analysis + Risk Scoring** — Multiple AI agents independently analyze code and produce consensus risk scores
+   - **Phase 3: Exploit Test Generation** — Generate and run exploit tests to verify vulnerabilities
+   - **Phase 4: Sandbox Verification** — Execute package in an isolated sandbox to confirm behavior
+5. **On-Chain Report** — Results are stored on DCAI chain with full audit trail
 
-By avoiding mnemonic exposure and strictly leveraging identity IDs and private keys securely matched to on-chain public keys, Validus ensures high-security interactions without compromising on developer experience.
+### How We Utilize Dash & DCAI
 
-> **Phase 1 & 2 Focus:**
-> - **Identity Validation:** Validate pre-existing Dash Platform identities.
-> - **Key Capabilities Analysis:** Inspect whether a supplied private key can sign for an identity.
-> - **Contract Lifecycle:** Define and publish an `auditReport` data contract.
-> - **Decentralized Retrieval:** Fetch deployed contracts securely from Dash Platform.
+| Feature | How It Works |
+|---------|-------------|
+| **Dash Platform** | Identity management, DPNS naming, data contract storage for audit metadata |
+| **DCAI L3 (Chain 18441)** | EVM-compatible chain for smart contracts, staking, and on-chain reports |
+| **Top Up** | Users send tDCAI to the ValidusStaking contract — credits are recorded on-chain and used to pay for audit services |
+| **Stake** | AI node providers lock tDCAI as collateral to participate in the audit network — honest work earns staking rewards |
+| **Slash** | If an AI node provider submits a dishonest audit (e.g., claims malicious code is safe), their entire stake is slashed through the on-chain resolution process |
+| **On-Chain Reports** | Every audit report is submitted to the ValidusReport contract — anyone can query and verify results |
 
-<br />
+### Resolution & Dispute System
 
-## Core Capabilities
+When a potential threat is detected:
 
-<table width="100%">
-  <tr>
-    <td width="50%" valign="top">
-      <h3>Smart Identity Validation</h3>
-      <p>The core engine safely validates identity states directly against the Dash testnet:</p>
-      <ul>
-        <li>Fetches real-time Dash Platform identity states by <code>ID</code>.</li>
-        <li>Monitors transparent testnet balances.</li>
-        <li>Performs cryptographic matching of configured private keys against on-chain identity keys.</li>
-        <li>Confirms execution privileges.</li>
-      </ul>
-    </td>
-    <td width="50%" valign="top">
-      <h3>Dynamic Contract Flow</h3>
-      <p>A seamless data pipeline backing our decentralized data contracts:</p>
-      <ul>
-        <li>Locally provisioned <code>auditReport</code> contract schemas.</li>
-        <li>High-fidelity <strong>Deploy APIs</strong> using the native <code>@dashevo/evo-sdk</code>.</li>
-        <li>Secure <strong>Fetch APIs</strong> to rapidly verify contract deployment status and state.</li>
-        <li>Comprehensive <strong>Admin Interface</strong> surfacing platform metrics.</li>
-      </ul>
-    </td>
-  </tr>
-</table>
+1. **Outcome Proposed** — Swarm AI flags malicious code (outcome: Yes)
+2. **Dispute Window** — Anyone can challenge by putting up a bond
+3. **First Round Voting** — AI agents vote on the outcome
+4. **Discussion** — Multiple AI agents debate the findings
+5. **Second Round Voting** — Final consensus vote
+6. **Final Outcome** — If the original finding stands, the disputer's bond is slashed
 
-<br />
-
-## Architecture
-
-Validus relies on a well-structured and separated architecture to ensure maintainability and modularity.
-
-```text
-nottshack2026/
-├── frontend/              # Next.js 16 core application, UI services, and API routes
-├── backend/               # Auxiliary microservices, notes, and backend structures
-├── IMPLEMENTATION.md      # Live technical implementation plan and architectural decisions
-└── README.md              # Project documentation
-```
+This mechanism ensures node providers keep their AI models updated and honest, and users get the best audit service possible.
 
 ---
 
-## Features
+## On-Chain Deployments (DCAI L3 — Chain ID 18441)
 
-### 🔐 1. Smart Identity Validation
-The core engine safely validates identity states directly against the Dash testnet:
-- Fetches real-time Dash Platform identity states by `ID`.
-- Monitors transparent testnet balances.
-- Performs cryptographic matching of configured private keys against on-chain identity keys.
-- Confirms execution privileges (e.g., name registration, contract deployment).
+### Smart Contracts
 
-### 📜 2. Dynamic Contract Flow
-A seamless data pipeline backing our decentralized data contracts:
-- Locally provisioned `auditReport` contract schemas.
-- High-fidelity **Deploy APIs** using the native `@dashevo/evo-sdk`.
-- Secure **Fetch APIs** to rapidly verify contract deployment status and state.
-- A comprehensive **Admin Interface** surfacing identity metrics, key capability checks, DPNS integrations, and real-time contract statuses.
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| **ValidusStaking** | `0x47423b0286099CFF00B6Bc2830674CED8caf2BFf` | Top-up credits, staking, and slashing |
+| **ValidusReport** | `0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da` | On-chain audit report storage & querying |
 
-### 💻 3. Polished UI Surfaces
-- **`/`** - Dynamic Landing Page for Validus infrastructure.
-- **`/test`** - Administration console mapping platform metrics.
-- **`/report`** - Public audit report ledger and verification interface.
+### Pre-deployed DCAI Contracts (Reference)
 
----
+| Contract | Address |
+|----------|---------|
+| OperatorRegistry | `0xb37c81eBC4b1B4bdD5476fe182D6C72133F41db9` |
+| MerkleRewardDistributor | `0x728f2C63b9A0ff0918F5ffB3D4C2d004107476B7` |
+| Builder Pass NFT | `0x08A8C0497f2756676dEeE5ba32935B2152adF968` |
 
-## Tech Stack
+### Key Transactions
 
-Validus is built leveraging modern tools offering top-tier scalability, type-safety, and aesthetic consistency.
+| Description | Tx Hash |
+|------------|---------|
+| ValidusStaking deployment | Contract created at `0x47423b0286099CFF00B6Bc2830674CED8caf2BFf` |
+| ValidusReport deployment | Contract created at `0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da` |
+| Code quality report submitted | `0x6b0c1a1a972ef09144be37dceca056e4ec3b262c6cd700577e02bcaa5ba47668` |
+| Top-up test (0.001 tDCAI) | Confirmed via Hardhat — credits: 0.005 tDCAI |
 
-- **Framework**: [Next.js 16](https://nextjs.org/) (App Router & API capabilities)
-- **Library**: [React 19](https://react.dev/)
-- **Language**: [TypeScript](https://www.typescriptlang.org/) for robust static typing
-- **Styling**: [Tailwind CSS 4](https://tailwindcss.com/) for utility-first responsive aesthetics
-- **Blockchain SDK**: [`@dashevo/evo-sdk`](https://www.npmjs.com/package/@dashevo/evo-sdk)
+### Network Details
 
----
-
-## Getting Started
-
-### Prerequisites
-- Node.js `v20+`
-- A verified Dash Platform Testnet Identity ID.
-- The corresponding private key (Hex or WIF format) capable of signing contracts.
-
-### 1. Installation
-
-```bash
-git clone https://github.com/lapsapthong-16/nottshack2026.git
-cd nottshack2026/frontend
-npm install
-```
-
-### 2. Environment Configuration
-
-Bootstrap your environment by utilizing the provided template:
-
-```bash
-cp .env.example .env
-```
-
-Populate `.env` with your secure credentials:
-
-```ini
-NETWORK=testnet
-DASH_IDENTITY_ID=
-DASH_PRIVATE_MASTER_AUTH=
-DASH_PRIVATE_CRITICAL_AUTH=
-DASH_PRIVATE_HIGH_AUTH=
-DASH_PRIVATE_CRITICAL_TRANS=
-```
-
-> **Security Note:** `PLATFORM_MNEMONIC` is optional, required only for legacy utilities within the ecosystem, but strictly bypassed in the refined Validus flow for enhanced security.
-
-### 3. Execution
-
-```bash
-# From the frontend directory
-npm run dev
-```
-
-Navigate to `http://localhost:3000` to interact with Validus.
+| Parameter | Value |
+|-----------|-------|
+| Network | DCAI L3 Testnet |
+| Chain ID | 18441 |
+| RPC | `http://139.180.188.61:8545` |
+| Explorer | `http://139.180.140.143:3002` |
+| Gas Token | tDCAI (18 decimals) |
+| Consensus | Proof of Authority |
+| Block Time | ~2 seconds |
 
 ---
 
-## API Reference
-
-Validus exposes robust internal endpoints handling the heavy lifting of Dash Platform interactivity.
-
-- `GET /api/evoguard/status` – Resolves Identity configuration and returns balance & cryptographic signing validations.
-- `GET /api/evoguard/contract` – Retrieves full `auditReport` contract deployment status and schema IDs.
-- `POST /api/evoguard/contract/deploy` – Commits the data contract to testnet securely.
-- `POST /api/evoguard/dpns/register` – Initializes DPNS naming operations mapping aliases to platform IDs.
-
----
-
-## Strategic Constraints & Security Policy
-
-Validus employs a stringent zero-mnemonic operational policy designed for production safety.
-
-Unlike older SDK iterations, this infrastructure leverages direct signature derivation, requiring:
-1. Valid Dash Platform **Identity ID**.
-2. A properly formatted **Private Key** correctly corresponding to bounds in the Identity's active public keys.
-3. Adequate testnet balance and administrative node capability attached to that identity.
-
-If criteria are unmet, Validus will gracefully fall back, block deployment procedures, and log extensive telemetry highlighting capability failure.
-
----
-
-## Build, Lint, and Validation Check
+## Setup
 
 ```bash
 cd frontend
-npm run lint
-npx next build --webpack
+cp .env.example .env
+# Fill in DASH_IDENTITY_ID, EVOGUARD_PRIVATE_KEY_WIF
+npm install
+npm run dev
 ```
-*Note: Using the `--webpack` flag circumvents potential Turbopack processing sandboxes depending on restrictive CI orchestration environments.*
 
----
+### Hardhat (Smart Contracts)
 
-## Product Roadmap
+```bash
+cd backend
+npm install
+npx hardhat compile
+npx hardhat run scripts/deploy.js --network dcai
+```
 
-- [x] Dash Identity Network Resolution
-- [x] Stateless Private Key Authorization Layer  
-- [x] DPNS Verification Status Handling  
-- [x] End-to-End Testnet Contract Deploy API  
-- [x] Validus Advanced User Administration Console  
-- [ ] Automated Pipeline Package Metadata Extraction
-- [ ] On-chain Storage Engine for Decentralized Audit Publication
-- [ ] Decentralized CLI Interrogation
-- [ ] Tiered / Payment-triggered audit mechanisms
+## Pages
+
+| Route | Description |
+|-------|-------------|
+| `/` | Main dashboard — package search, audit quotes, scan initiation |
+| `/report2` | Detailed audit report with on-chain findings, risk scores, explorer links |
+| `/dcai/stack` | DCAI staking dashboard — top up, stake, slash, submit reports |
+| `/profile` | User profile — wallet info, staking, resolution system demo |
+| `/evoguard` | Dash Platform identity validation and contract deployment |
+
+## API Routes
+
+| Route | Method | Description |
+|-------|--------|-------------|
+| `/api/dcai/rpc` | POST | Proxy for DCAI RPC (bypasses CORS) |
+| `/api/dcai/send-tx` | POST | Server-side transaction signing and broadcasting |
+| `/api/dcai/query-reports` | GET | Query on-chain audit reports by ID or auditor |
+| `/api/evoguard/status` | GET | Dash Platform identity status |
+| `/api/evoguard/contract/deploy` | POST | Deploy data contract on Dash Platform |
