@@ -47,10 +47,22 @@ export default function Landing() {
   const [quote, setQuote] = useState<QuoteResponse | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [expandDash, setExpandDash] = useState(false);
+  const [expandDcai, setExpandDcai] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Press "2" to go to /report2
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
+      if (e.key === "2") router.push("/report2");
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [router]);
 
   // ── Debounced npm search ──
   const searchNpm = useCallback(async (query: string) => {
@@ -328,55 +340,109 @@ export default function Landing() {
               )}
 
               {quote && (
-                <div className="w-full rounded-2xl border border-[#d6d0c8] bg-white p-5 shadow-sm">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Ceiling Estimate</p>
-                      <h2 className="mt-1 text-xl font-semibold text-[#1a1a1a]">
-                        {quote.package}
-                        <span className="ml-2 font-mono text-sm text-[#8a8580]">@{quote.version}</span>
-                      </h2>
-                    </div>
-                    <div className="rounded-xl bg-[#f5f0ea] px-4 py-3 text-right">
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-[#8a8580]">Ceiling</p>
-                      <p className="text-2xl font-bold text-[#1a1a1a]">{quote.estimateTDash} tDASH</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
-                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Billable Lines</p>
-                      <p className="mt-1 text-lg font-semibold">{quote.billableLines}</p>
-                    </div>
-                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Estimated Minutes</p>
-                      <p className="mt-1 text-lg font-semibold">{quote.estimatedMinutes}</p>
-                    </div>
-                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Line Charge</p>
-                      <p className="mt-1 text-lg font-semibold">{quote.breakdown.lineChargeCredits}</p>
-                    </div>
-                    <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Time Charge</p>
-                      <p className="mt-1 text-lg font-semibold">{quote.breakdown.timeChargeCredits}</p>
-                    </div>
-                  </div>
-
-                  <p className="mt-4 text-sm leading-6 text-[#6b6b6b]">
-                    You will only be charged the final scan amount, capped at this ceiling.
-                  </p>
-
-                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-xs text-[#8a8580]">
-                      Quote expires at {new Date(quote.expiresAt).toLocaleTimeString()}.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={handleAcceptQuote}
-                      className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
-                    >
-                      Accept &amp; Start Scan
+                <div className="w-full space-y-4">
+                  {/* Dash Estimate */}
+                  <div className="rounded-2xl border border-[#d6d0c8] bg-white shadow-sm overflow-hidden">
+                    <button type="button" onClick={() => setExpandDash(!expandDash)}
+                      className="flex w-full items-center justify-between p-5 text-left cursor-pointer bg-transparent border-none">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Ceiling Estimate</p>
+                        <h2 className="mt-1 text-xl font-semibold text-[#1a1a1a]">
+                          {quote.package}<span className="ml-2 font-mono text-sm text-[#8a8580]">@{quote.version}</span>
+                        </h2>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-xl bg-[#f5f0ea] px-4 py-3 text-right">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-[#8a8580]">Ceiling</p>
+                          <p className="text-2xl font-bold text-[#1a1a1a]">{quote.estimateTDash} tDASH</p>
+                        </div>
+                        <svg width="12" height="8" viewBox="0 0 12 8" className={`transition-transform ${expandDash ? "rotate-180" : ""}`}>
+                          <path d="M1 1L6 6L11 1" stroke="#8a8580" strokeWidth="2" strokeLinecap="round" fill="none"/>
+                        </svg>
+                      </div>
                     </button>
+
+                    {expandDash && (
+                      <div className="px-5 pb-5">
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Billable Lines</p>
+                            <p className="mt-1 text-lg font-semibold">{quote.billableLines}</p>
+                          </div>
+                          <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Estimated Minutes</p>
+                            <p className="mt-1 text-lg font-semibold">{quote.estimatedMinutes}</p>
+                          </div>
+                          <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Line Charge</p>
+                            <p className="mt-1 text-lg font-semibold">{quote.breakdown.lineChargeCredits}</p>
+                          </div>
+                          <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Time Charge</p>
+                            <p className="mt-1 text-lg font-semibold">{quote.breakdown.timeChargeCredits}</p>
+                          </div>
+                        </div>
+                        <p className="mt-4 text-sm leading-6 text-[#6b6b6b]">You will only be charged the final scan amount, capped at this ceiling.</p>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-xs text-[#8a8580]">Quote expires at {new Date(quote.expiresAt).toLocaleTimeString()}.</p>
+                          <button type="button" onClick={handleAcceptQuote} className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90">
+                            Accept &amp; Start Scan (tDASH)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* DCAI Estimate */}
+                  <div className="rounded-2xl border border-amber-300/50 bg-[#fffbf5] shadow-sm overflow-hidden">
+                    <button type="button" onClick={() => setExpandDcai(!expandDcai)}
+                      className="flex w-full items-center justify-between p-5 text-left cursor-pointer bg-transparent border-none">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600">DCAI L3 Estimate</p>
+                        <h2 className="mt-1 text-xl font-semibold text-[#1a1a1a]">
+                          {quote.package}<span className="ml-2 font-mono text-sm text-[#8a8580]">@{quote.version}</span>
+                        </h2>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-right">
+                          <p className="text-[11px] uppercase tracking-[0.12em] text-amber-600">Ceiling</p>
+                          <p className="text-2xl font-bold text-amber-700">{(quote.billableLines * 0.000005 + quote.estimatedMinutes * 0.001).toFixed(6)} tDCAI</p>
+                        </div>
+                        <svg width="12" height="8" viewBox="0 0 12 8" className={`transition-transform ${expandDcai ? "rotate-180" : ""}`}>
+                          <path d="M1 1L6 6L11 1" stroke="#d97706" strokeWidth="2" strokeLinecap="round" fill="none"/>
+                        </svg>
+                      </div>
+                    </button>
+
+                    {expandDcai && (
+                      <div className="px-5 pb-5">
+                        <div className="grid gap-3 sm:grid-cols-4">
+                          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Billable Lines</p>
+                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{quote.billableLines}</p>
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Estimated Minutes</p>
+                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{quote.estimatedMinutes}</p>
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Line Charge</p>
+                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{(quote.billableLines * 0.000005).toFixed(6)}</p>
+                          </div>
+                          <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                            <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Time Charge</p>
+                            <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{(quote.estimatedMinutes * 0.001).toFixed(6)}</p>
+                          </div>
+                        </div>
+                        <p className="mt-4 text-sm leading-6 text-[#6b6b6b]">Pay with tDCAI on DCAI L3 (Chain 18441). Charged from your top-up credits.</p>
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <p className="text-xs text-[#8a8580]">Quote expires at {new Date(quote.expiresAt).toLocaleTimeString()}.</p>
+                          <button type="button" onClick={handleAcceptQuote} className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600">
+                            Accept &amp; Start Scan (tDCAI)
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
