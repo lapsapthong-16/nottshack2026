@@ -9,7 +9,9 @@ import {
   QUOTE_EXPIRY_MS,
   countBillableLines,
 } from "../../../lib/server/pricing";
-import { normalizePackageName, normalizeVersion } from "../../../lib/shared/auditSchemas";
+import { normalizePackageName, normalizePaymentRoute, normalizeVersion } from "../../../lib/shared/auditSchemas";
+
+const DCAI_ESTIMATE_TDCAI = "0.004870";
 
 function sha256(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex");
@@ -21,13 +23,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { name, version = "latest" } = req.body ?? {};
+  const { name, version = "latest", paymentRoute } = req.body ?? {};
   if (!name) {
     return res.status(400).json({ error: "Missing package name" });
   }
 
   const normalizedName = normalizePackageName(String(name));
   const requestedVersion = normalizeVersion(String(version));
+  const normalizedPaymentRoute = normalizePaymentRoute(
+    typeof paymentRoute === "string" ? paymentRoute : null,
+  );
+
+  if (paymentRoute !== "dash" && paymentRoute !== "dcai") {
+    return res.status(400).json({ error: "Missing paymentRoute" });
+  }
 
   try {
     const npmRes = await fetch(`https://registry.npmjs.org/${encodeURIComponent(normalizedName)}`);
@@ -56,6 +65,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       quote_id: quoteId,
       package: normalizedName,
       version: normalizedResolvedVersion,
+      payment_route: normalizedPaymentRoute,
       pricing_version: PRICING_VERSION,
       billable_lines: billableLines,
       estimated_minutes: quote.estimatedMinutes,
@@ -70,9 +80,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       quoteId,
       package: normalizedName,
       version: normalizedResolvedVersion,
+      paymentRoute: normalizedPaymentRoute,
       billableLines,
       estimatedMinutes: quote.estimatedMinutes,
-      estimateTDash: creditsToTDashString(quote.ceilingAmountCredits),
+      estimateTDash: normalizedPaymentRoute === "dash" ? creditsToTDashString(quote.ceilingAmountCredits) : undefined,
+      estimateTDcai: normalizedPaymentRoute === "dcai" ? DCAI_ESTIMATE_TDCAI : undefined,
       estimateCredits: quote.ceilingAmountCredits.toString(),
       breakdown: quote.breakdown,
       expiresAt: expiresAt.toISOString(),

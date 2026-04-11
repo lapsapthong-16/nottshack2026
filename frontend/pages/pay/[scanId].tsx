@@ -13,17 +13,21 @@ function getInjected(): any {
 }
 
 type BillingResponse = {
+  paymentRoute: "dash" | "dcai";
   billing: {
     scan_id: string;
     package: string;
     version: string;
+    payment_route: "dash" | "dcai";
     final_amount_credits: string;
     ceiling_amount_credits: string;
     payment_status: "pending" | "paid";
     publication_status: "pending" | "published" | "failed";
   };
-  finalAmountTDash: string;
-  ceilingAmountTDash: string;
+  finalAmountTDash?: string;
+  finalAmountTDcai?: string;
+  ceilingAmountTDash?: string;
+  ceilingAmountTDcai?: string;
 };
 
 type ExtensionWindow = Window & {
@@ -78,6 +82,11 @@ export default function PayScan() {
         setLoading(false);
       });
   }, [resolvedScanId]);
+
+  useEffect(() => {
+    if (!data || data.paymentRoute !== "dcai") return;
+    void router.replace(`/report/${encodeURIComponent(data.billing.scan_id)}`);
+  }, [data, router]);
 
   async function handlePayment() {
     if (!data || isPaying) return;
@@ -231,7 +240,7 @@ export default function PayScan() {
               </div>
             )}
 
-            {!loading && data && (
+            {!loading && data && data.paymentRoute === "dash" && (
               <>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Unlock Scan Report</p>
                 <h1 className="mt-2 text-3xl font-bold">
@@ -287,6 +296,25 @@ export default function PayScan() {
                       </button>
                     </div>
                   )}
+                </div>
+              </>
+            )}
+
+            {!loading && data && data.paymentRoute === "dcai" && (
+              <>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600">DCAI Route</p>
+                <h1 className="mt-2 text-3xl font-bold text-[#1a1a1a]">No DASH extension payment needed</h1>
+                <p className="mt-3 text-sm leading-6 text-[#6b6b6b]">
+                  This scan was already paid with tDCAI. The report is available directly, and Dash Drive publication is handled by the backend wallet.
+                </p>
+                <div className="mt-6 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => void router.push(`/report/${encodeURIComponent(data.billing.scan_id)}`)}
+                    className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600"
+                  >
+                    Open Report
+                  </button>
                 </div>
               </>
             )}

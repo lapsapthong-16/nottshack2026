@@ -1,6 +1,8 @@
 export const SEVERITY_LEVELS = ["high", "medium", "low", "none"] as const;
+export const PAYMENT_ROUTES = ["dash", "dcai"] as const;
 
 export type Severity = (typeof SEVERITY_LEVELS)[number];
+export type PaymentRoute = (typeof PAYMENT_ROUTES)[number];
 
 export type SeveritySummary = Record<Severity, number>;
 
@@ -72,6 +74,7 @@ export interface ScanQuoteRecord {
   quote_id: string;
   package: string;
   version: string;
+  payment_route: PaymentRoute;
   pricing_version: string;
   billable_lines: number;
   estimated_minutes: number;
@@ -87,6 +90,7 @@ export interface ScanBillingRecord {
   quote_id: string;
   package: string;
   version: string;
+  payment_route: PaymentRoute;
   pricing_version: string;
   billable_lines: number;
   actual_duration_ms: number;
@@ -99,8 +103,10 @@ export interface ScanBillingRecord {
   payer_identity_id: string | null;
   recipient_identity_id: string | null;
   transition_id: string | null;
+  dcai_tx_hash: string | null;
   paid_at: string | null;
   publication_status: "pending" | "published" | "failed";
+  publication_trigger: "dash_payment_confirm" | "dcai_credit_burn" | null;
 }
 
 export interface FindingRecord {
@@ -293,6 +299,10 @@ export function normalizePackageName(name: string): string {
 export function normalizeVersion(version?: string | null): string {
   const v = (version ?? "").trim();
   return v.length > 0 ? v : "latest";
+}
+
+export function normalizePaymentRoute(route?: string | null): PaymentRoute {
+  return route === "dcai" ? "dcai" : "dash";
 }
 
 export function buildPackageVersionKey(name: string, version?: string | null): string {

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { useState, useCallback } from "react";
 import { ethers } from "ethers";
 
@@ -28,6 +27,7 @@ type HeaderProps = {
   filesTotal?: number;
   progress?: number; // 0-100
   auditPhase?: number;
+  activeRoute?: "dash" | "dcai" | null;
 };
 
 export default function Header({
@@ -36,6 +36,7 @@ export default function Header({
   filesTotal,
   progress,
   auditPhase,
+  activeRoute = null,
 }: HeaderProps) {
   const showProgress = packageName !== undefined;
 
@@ -132,57 +133,35 @@ export default function Header({
 
   return (
     <>
-      <header className="flex items-center border-b border-[#e0dbd4] bg-[#f0ebe4] px-6 py-3">
+      <header className="flex items-center border-b border-[#e0dbd4] bg-[#f0ebe4] px-6 py-2">
         <Link
           href="/"
-          className="flex items-center transition-opacity hover:opacity-80"
+          className="transition-opacity hover:opacity-80"
         >
-          <Image
-            src="/resouces/logo.png"
-            alt="Validus Logo"
-            width={180}
-            height={94}
-            className="h-11 w-auto object-contain"
-            priority
+          <img 
+            src="/resouces/logo.png" 
+            alt="Validus Logo" 
+            className="h-20 w-auto object-contain" 
+            style={{ display: 'block' }}
           />
         </Link>
 
         {/* Nav links */}
         <nav className="ml-8 flex items-center gap-6">
+          <Link href="/check" className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]">
+            Audit
+          </Link>
           <Link href="/report" className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]">
             Reports
+          </Link>
+          <Link href="/profile" className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]">
+            Profile
           </Link>
         </nav>
 
         {/* Content on the right (Wallet + Progress indicator) */}
         <div className="ml-auto flex items-center gap-6">
           
-          {/* DCAI Wallet Section */}
-          <div className="flex items-center gap-3">
-            {dcaiWallet ? (
-              <>
-                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                  {dcaiCredits ? `${parseFloat(dcaiCredits).toFixed(4)} tDCAI` : "..."}
-                </span>
-                <button
-                  onClick={() => setShowTopUp(true)}
-                  className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-600"
-                >
-                  Top Up
-                </button>
-                <span className="text-xs font-mono text-[#6b6b6b]">
-                  {dcaiWallet.slice(0, 6)}...{dcaiWallet.slice(-4)}
-                </span>
-              </>
-            ) : (
-              <button
-                onClick={connectDcai}
-                className="rounded-lg bg-[#1a1a1a] px-4 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#333]"
-              >
-                DCAI
-              </button>
-            )}
-          </div>
 
           {showProgress && (
             <>

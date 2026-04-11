@@ -10,6 +10,7 @@ import type {
   AuditVerdict,
   FindingRecord,
   PublicPackageVersionData,
+  ScanBillingRecord,
   ScanRunRecord,
   Severity,
   SeveritySummary,
@@ -29,12 +30,14 @@ import {
   runAgent2FinalVerdict,
 } from "../../../lib/audit/agents";
 import { readQuoteRecord, writeBillingRecord, writeQuoteRecord } from "../../../lib/server/auditPricingStore";
+import { publishPaidAudit } from "../../../lib/server/auditPublication";
 import {
   computeFinalCharge,
   countBillableLines,
   creditsToTDashString,
   PRICING_VERSION,
 } from "../../../lib/server/pricing";
+import { normalizePaymentRoute } from "../../../lib/shared/auditSchemas";
 
 
 type CollectedFinding = {
@@ -121,13 +124,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { name, version = "latest", quoteId } = req.body ?? {};
-  if (!name || !quoteId) {
-    return res.status(400).json({ error: "Missing package name or quoteId" });
+  const { name, version = "latest", quoteId, paymentRoute, dcaiTxHash } = req.body ?? {};
+  if (!name || !quoteId || !paymentRoute) {
+    return res.status(400).json({ error: "Missing package name, quoteId, or paymentRoute" });
   }
 
   const normalizedName = normalizePackageName(String(name));
   const requestedVersion = normalizeVersion(String(version));
+  const normalizedPaymentRoute = normalizePaymentRoute(String(paymentRoute));
   const logger = new AuditLogger(normalizedName, requestedVersion, res);
 
   try {
@@ -160,6 +164,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
     if (quote.package !== normalizedName || quote.version !== normalizedResolvedVersion) {
       logger.sendEvent("error", { message: "Quote does not match the requested package version" });
+      res.end();
+      return;
+    }
+    if (quote.payment_route !== normalizedPaymentRoute) {
+      logger.sendEvent("error", { message: "Quote payment route does not match the requested route" });
       res.end();
       return;
     }
@@ -281,7 +290,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
               : [];
 
-            if (severity === "none" || severity === "safe") continue;
+            if (severity === "none") continue;
 
             collectedFindings.push({
               file,
@@ -408,7 +417,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
                   : [];
 
-                if (severity === "none" || severity === "safe") continue;
+                if (severity === "none") continue;
 
                 collectedFindings.push({
                   file,
@@ -606,11 +615,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       acceptedCeilingCredits: BigInt(quote.ceiling_amount_credits),
     });
 
-    writeBillingRecord({
+    const billingRecord: ScanBillingRecord = {
       scan_id: scanId,
       quote_id: quote.quote_id,
       package: normalizedName,
       version: normalizedResolvedVersion,
+      payment_route: normalizedPaymentRoute,
       pricing_version: PRICING_VERSION,
       billable_lines: billableLines,
       actual_duration_ms: durationMs,
@@ -619,13 +629,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       time_charge_credits: finalCharge.breakdown.timeChargeCredits,
       ceiling_amount_credits: quote.ceiling_amount_credits,
       final_amount_credits: finalCharge.finalAmountCredits.toString(),
-      payment_status: "pending",
+      payment_status: normalizedPaymentRoute === "dcai" && dcaiTxHash ? "paid" : "pending",
       payer_identity_id: null,
       recipient_identity_id: process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID || null,
       transition_id: null,
-      paid_at: null,
+      dcai_tx_hash: normalizedPaymentRoute === "dcai" ? String(dcaiTxHash ?? "") || null : null,
+      paid_at: normalizedPaymentRoute === "dcai" && dcaiTxHash ? new Date().toISOString() : null,
       publication_status: "pending",
-    });
+      publication_trigger: normalizedPaymentRoute === "dcai" && dcaiTxHash ? "dcai_credit_burn" : null,
+    };
+
+    writeBillingRecord(billingRecord);
+
+    let publicationStatus = billingRecord.publication_status;
+    if (billingRecord.payment_status === "paid") {
+      const publicationResult = await publishPaidAudit(scanId);
+      publicationStatus = publicationResult.publicationStatus;
+    }
 
     await client.stop();
     logger.log(`═══════════════════════════════════════════════════`);
@@ -635,13 +655,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logger.log(`JSON output dir: ${artifacts.scanDir}`);
     logger.log(`═══════════════════════════════════════════════════`);
     logger.sendEvent("done", {
-      label: "Audit complete — final price is ready and the report is locked pending payment",
+      label:
+        normalizedPaymentRoute === "dash"
+          ? "Audit complete — final price is ready and the report is locked pending payment"
+          : "Audit complete — DCAI payment captured and the report is being published to Dash Drive",
       scanId,
+      paymentRoute: normalizedPaymentRoute,
       finalAmountCredits: finalCharge.finalAmountCredits.toString(),
       finalAmountTDash: creditsToTDashString(finalCharge.finalAmountCredits),
       estimateAmountTDash: creditsToTDashString(BigInt(quote.ceiling_amount_credits)),
-      paymentStatus: "pending",
-      reportLocked: true,
+      estimateAmountTDcai: normalizedPaymentRoute === "dcai" ? "0.004870" : null,
+      paymentStatus: billingRecord.payment_status,
+      reportLocked: normalizedPaymentRoute === "dash",
+      nextAction: normalizedPaymentRoute === "dash" ? "go_to_dash_payment" : "view_report",
+      publicationStatus,
       billableLines,
       actualMinutes: finalCharge.actualMinutes,
     });

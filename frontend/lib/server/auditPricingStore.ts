@@ -2,10 +2,12 @@ import fs from "fs";
 import path from "path";
 import type {
   PublicPackageVersionData,
+  PaymentRoute,
   ScanBillingRecord,
   ScanQuoteRecord,
   ScanRunRecord,
 } from "../shared/auditSchemas";
+import { normalizePaymentRoute } from "../shared/auditSchemas";
 
 const JSON_BASE = path.join(process.cwd(), "logs", "audit", "json");
 const PRICING_BASE = path.join(process.cwd(), "logs", "audit", "pricing");
@@ -45,7 +47,12 @@ export function writeQuoteRecord(record: ScanQuoteRecord): void {
 }
 
 export function readQuoteRecord(quoteId: string): ScanQuoteRecord | null {
-  return readJsonFile<ScanQuoteRecord>(getQuoteFilePath(quoteId));
+  const record = readJsonFile<ScanQuoteRecord & { payment_route?: PaymentRoute }>(getQuoteFilePath(quoteId));
+  if (!record) return null;
+  return {
+    ...record,
+    payment_route: normalizePaymentRoute(record.payment_route),
+  };
 }
 
 export function writeBillingRecord(record: ScanBillingRecord): void {
@@ -53,7 +60,14 @@ export function writeBillingRecord(record: ScanBillingRecord): void {
 }
 
 export function readBillingRecord(scanId: string): ScanBillingRecord | null {
-  return readJsonFile<ScanBillingRecord>(getBillingFilePath(scanId));
+  const record = readJsonFile<ScanBillingRecord & { payment_route?: PaymentRoute; dcai_tx_hash?: string | null; publication_trigger?: "dash_payment_confirm" | "dcai_credit_burn" | null }>(getBillingFilePath(scanId));
+  if (!record) return null;
+  return {
+    ...record,
+    payment_route: normalizePaymentRoute(record.payment_route),
+    dcai_tx_hash: record.dcai_tx_hash ?? null,
+    publication_trigger: record.publication_trigger ?? null,
+  };
 }
 
 export function getScanDir(scanId: string): string {

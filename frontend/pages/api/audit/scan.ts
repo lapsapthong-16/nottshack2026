@@ -74,6 +74,7 @@ function getScanById(scanId: string, res: NextApiResponse) {
       scanId,
       paymentRequired: true,
       paymentStatus: billing?.payment_status ?? "pending",
+      paymentRoute: billing?.payment_route ?? "dash",
     });
   }
 

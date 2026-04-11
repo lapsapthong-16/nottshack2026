@@ -2,7 +2,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState, useRef } from "react";
 import Head from "next/head";
 import Header from "@/components/Header";
-import { normalizePackageName, normalizeVersion } from "@/lib/shared/auditSchemas";
+import { normalizePackageName, normalizePaymentRoute, normalizeVersion } from "@/lib/shared/auditSchemas";
 
 // --- Types ---
 
@@ -65,11 +65,16 @@ type ChunkResult = {
 
 type BillingSummary = {
   scanId: string;
+  paymentRoute: "dash" | "dcai";
   finalAmountCredits: string;
-  finalAmountTDash: string;
-  estimateAmountTDash: string;
+  finalAmountTDash?: string | null;
+  finalAmountTDcai?: string | null;
+  estimateAmountTDash?: string | null;
+  estimateAmountTDcai?: string | null;
   paymentStatus: string;
   reportLocked: boolean;
+  nextAction: "go_to_dash_payment" | "view_report";
+  publicationStatus?: "pending" | "published" | "failed";
   billableLines: number;
   actualMinutes: number;
 };
@@ -544,7 +549,7 @@ function FilesPanel({
 
 export default function Check() {
   const router = useRouter();
-  const { name, version, quoteId } = router.query;
+  const { name, version, quoteId, paymentRoute, dcaiTxHash } = router.query;
   const pkgName = normalizePackageName(
     typeof name === "string" ? name : Array.isArray(name) ? (name[0] ?? "unknown-package") : "unknown-package"
   );
@@ -553,6 +558,11 @@ export default function Check() {
   );
   const resolvedQuoteId =
     typeof quoteId === "string" ? quoteId : Array.isArray(quoteId) ? (quoteId[0] ?? "") : "";
+  const resolvedPaymentRoute = normalizePaymentRoute(
+    typeof paymentRoute === "string" ? paymentRoute : Array.isArray(paymentRoute) ? (paymentRoute[0] ?? null) : null,
+  );
+  const resolvedDcaiTxHash =
+    typeof dcaiTxHash === "string" ? dcaiTxHash : Array.isArray(dcaiTxHash) ? (dcaiTxHash[0] ?? "") : "";
 
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [visibleSteps, setVisibleSteps] = useState(0);
@@ -710,7 +720,13 @@ export default function Check() {
         const response = await fetch("/api/audit/analyze", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: pkgName, version: pkgVersion, quoteId: resolvedQuoteId }),
+          body: JSON.stringify({
+            name: pkgName,
+            version: pkgVersion,
+            quoteId: resolvedQuoteId,
+            paymentRoute: resolvedPaymentRoute,
+            dcaiTxHash: resolvedPaymentRoute === "dcai" ? resolvedDcaiTxHash : undefined,
+          }),
           signal: controller.signal,
         });
 
@@ -921,11 +937,16 @@ export default function Check() {
                   setAuditPhase(8);
                   setBillingSummary({
                     scanId: event.scanId,
+                    paymentRoute: event.paymentRoute ?? resolvedPaymentRoute,
                     finalAmountCredits: event.finalAmountCredits,
                     finalAmountTDash: event.finalAmountTDash,
+                    finalAmountTDcai: event.finalAmountTDcai,
                     estimateAmountTDash: event.estimateAmountTDash,
+                    estimateAmountTDcai: event.estimateAmountTDcai,
                     paymentStatus: event.paymentStatus,
                     reportLocked: Boolean(event.reportLocked),
+                    nextAction: event.nextAction ?? "go_to_dash_payment",
+                    publicationStatus: event.publicationStatus,
                     billableLines: event.billableLines ?? 0,
                     actualMinutes: event.actualMinutes ?? 0,
                   });
@@ -960,11 +981,23 @@ export default function Check() {
       auditStarted.current = false; // Allow restart on StrictMode remount
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router.isReady, pkgName, pkgVersion, resolvedQuoteId]);
+  }, [router.isReady, pkgName, pkgVersion, resolvedQuoteId, resolvedPaymentRoute, resolvedDcaiTxHash]);
 
   // Files scanned = files in the right panel that have been processed by agents
   const filesScannedCount = files.filter((f) => f.risk !== null).length;
   const scanProgress = totalPackageFiles > 0 ? (filesScannedCount / totalPackageFiles) * 100 : 0;
+
+  useEffect(() => {
+    if (!billingSummary || billingSummary.paymentRoute !== "dcai" || billingSummary.reportLocked) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void router.push(`/report/${encodeURIComponent(billingSummary.scanId)}`);
+    }, 1500);
+
+    return () => window.clearTimeout(timeout);
+  }, [billingSummary, router]);
 
   let calculatedProgress = 0;
   if (finalVerdict) {
@@ -1063,6 +1096,7 @@ export default function Check() {
           filesTotal={totalPackageFiles || files.length}
           progress={progress}
           auditPhase={auditPhase}
+          activeRoute={resolvedPaymentRoute}
         />
 
         <div className="flex flex-1 overflow-hidden">
@@ -1080,22 +1114,46 @@ export default function Check() {
               <div className="border-b border-[#e0dbd4] bg-white px-6 py-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">Report Locked Pending Payment</p>
-                    <p className="mt-1 text-sm text-[#4a4a4a]">
-                      Final amount: <span className="font-semibold text-[#1a1a1a]">{billingSummary.finalAmountTDash} tDASH</span>
-                      {" "}within approved ceiling of {billingSummary.estimateAmountTDash} tDASH.
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8a8580]">
+                      {billingSummary.paymentRoute === "dash" ? "Report Locked Pending Payment" : "DCAI Payment Captured"}
                     </p>
+                    {billingSummary.paymentRoute === "dash" ? (
+                      <p className="mt-1 text-sm text-[#4a4a4a]">
+                        Final amount: <span className="font-semibold text-[#1a1a1a]">{billingSummary.finalAmountTDash} tDASH</span>
+                        {" "}within approved ceiling of {billingSummary.estimateAmountTDash} tDASH.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-sm text-[#4a4a4a]">
+                        Payment captured via <span className="font-semibold text-[#1a1a1a]">{billingSummary.finalAmountTDcai ?? billingSummary.estimateAmountTDcai} tDCAI</span>.
+                        {" "}Dash Drive publication is running from the backend wallet.
+                      </p>
+                    )}
                     <p className="mt-1 text-xs text-[#8a8580]">
                       {billingSummary.billableLines} billable lines • {billingSummary.actualMinutes} billed minute{billingSummary.actualMinutes === 1 ? "" : "s"}
                     </p>
+                    {billingSummary.paymentRoute === "dcai" && billingSummary.publicationStatus && (
+                      <p className="mt-1 text-xs text-[#8a8580]">
+                        Publication status: {billingSummary.publicationStatus}
+                      </p>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => void router.push(`/pay/${encodeURIComponent(billingSummary.scanId)}`)}
-                    className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
-                  >
-                    Pay &amp; Unlock Report
-                  </button>
+                  {billingSummary.paymentRoute === "dash" ? (
+                    <button
+                      type="button"
+                      onClick={() => void router.push(`/pay/${encodeURIComponent(billingSummary.scanId)}`)}
+                      className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90"
+                    >
+                      Pay &amp; Unlock Report
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void router.push(`/report/${encodeURIComponent(billingSummary.scanId)}`)}
+                      className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600"
+                    >
+                      Open Report
+                    </button>
+                  )}
                 </div>
               </div>
             )}
