@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./Validus-Logo.jpeg" alt="Validus Logo" width="400" />
+</p>
+
 # Validus — AI-Powered Security Audit Platform
 
 ## The Problem: Open Source Supply Chain Attacks
@@ -150,7 +154,6 @@ Dash Platform provides the identity and data layer for Validus:
 | Feature | How It Works |
 |---------|-------------|
 | **Identity Management** | Each auditor and user has a Dash Platform identity tied to their on-chain actions |
-| **DPNS Naming** | Human-readable aliases (e.g., `validus.dash`) for identity resolution |
 | **Data Contracts** | Structured audit metadata stored on Dash Platform for cross-chain discoverability |
 | **Ceiling Estimates** | Scan pricing quotes are generated based on billable lines and estimated time, denominated in tDASH |
 
@@ -175,7 +178,7 @@ DCAI L3 is the EVM-compatible execution layer where all financial and audit logi
 | Layer | Technology |
 |---|---|
 | **Smart Contracts** | Solidity 0.8.x, Hardhat |
-| **Blockchain** | DCAI L3 (EVM Compatible), Dash Platform (DPNS & Data Contracts) |
+| **Blockchain** | DCAI L3 (EVM Compatible), Dash Platform (Data Contracts) |
 | **Frontend** | Next.js 14, React, TypeScript |
 | **Styling** | Tailwind CSS |
 | **AI Agents** | Swarm Analysis, LLMs |
@@ -256,7 +259,8 @@ npx hardhat run scripts/deploy.js --network dcai
 | Name |
 |---|
 | **Tan Zhi Wei** |
-| **Ho Shao Mun** |
+| **Lee Kevin** |
+| **Wong Kiong Wei** |
 | **Edwina Hon** |
 
 ---
