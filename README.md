@@ -44,6 +44,12 @@ Validus is a decentralized AI-powered security audit platform that scans npm pac
 
 ---
 
+## Architecture
+
+![Validus Architecture](./Validus-Main.jpg)
+
+---
+
 ## AI Agent Pipeline — How It Works Under the Hood
 
 Validus uses a multi-phase AI agent pipeline where each phase builds on the previous one. No single AI makes the final call — instead, multiple agents work independently and reach consensus, making it extremely difficult for malicious code to slip through.
@@ -164,6 +170,20 @@ DCAI L3 is the EVM-compatible execution layer where all financial and audit logi
 
 ---
 
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Smart Contracts** | Solidity 0.8.x, Hardhat |
+| **Blockchain** | DCAI L3 (EVM Compatible), Dash Platform (DPNS & Data Contracts) |
+| **Frontend** | Next.js 14, React, TypeScript |
+| **Styling** | Tailwind CSS |
+| **AI Agents** | Swarm Analysis, LLMs |
+| **Web3** | Ethers.js, Dash Platform SDK |
+| **Wallets** | OKX Wallet, Dash Platform Identity |
+
+---
+
 ## On-Chain Deployments
 
 ### Dash Platform
@@ -229,3 +249,20 @@ npx hardhat run scripts/deploy.js --network dcai
 | `/api/dcai/query-reports` | GET | Query on-chain audit reports by ID or auditor |
 | `/api/evoguard/status` | GET | Dash Platform identity status |
 | `/api/evoguard/contract/deploy` | POST | Deploy data contract on Dash Platform |
+
+---
+
+## Team
+| Name |
+|---|
+| **Tan Zhi Wei** |
+| **Ho Shao Mun** |
+| **Edwina Hon** |
+
+---
+
+## Acknowledgments
+- [Dash Platform](https://dashplatform.readme.io/) — Identity and Data Contracts
+- DCAI L3 Network — EVM execution and Staking
+- [OKX Wallet](https://www.okx.com/web3) — Wallet Integration
+- [Next.js](https://nextjs.org/) — Frontend Framework
