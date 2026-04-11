@@ -8,7 +8,7 @@ import {
   SecurityLevel,
 } from "@dashevo/evo-sdk";
 import crypto from "crypto";
-import { createClient, getIdentityPublicKeys } from "../../setupDashClient.mjs";
+import { createClient, getIdentityPublicKeys } from "@/setupDashClient.mjs";
 import { getEvoguardConfig } from "./evoguardConfig";
 import { resolveWritableIdentityContext } from "./identityCredentialService";
 import {
@@ -97,18 +97,20 @@ function buildContractForIdentity(ownerId: string, identityNonce: bigint) {
     ownerId: Identifier.fromBase58(ownerId),
     identityNonce: BigInt(identityNonce) + 1n,
     schemas: buildEvoguardContractSchema(),
-    definitions: {},
+
+
     fullValidation: false,
     platformVersion: 1,
   });
 }
 
-export async function deployEvoguardContract() {
+export async function deployEvoguardContract(force = false) {
   const config = getEvoguardConfig();
   const currentStatus = await getContractStatus();
   console.log("Current Contract Status:", JSON.stringify(currentStatus));
 
-  if (currentStatus.exists && currentStatus.fetchedId) {
+  if (!force && currentStatus.exists && currentStatus.fetchedId) {
+
     console.log("Contract already exists, skipping deployment.");
     return {
       id: currentStatus.fetchedId,
@@ -138,7 +140,7 @@ export async function deployEvoguardContract() {
   if (isMaster) {
     // Generate a new random private key for CRITICAL level
     const randomBytes = crypto.randomBytes(32);
-    const newPrivateKey = PrivateKey.fromBytes(new Uint8Array(randomBytes), config.network);
+    const newPrivateKey = PrivateKey.fromBytes(new Uint8Array(randomBytes), config.network as any);
     const newPublicKeyData = newPrivateKey.getPublicKey().toBytes();
 
     // Find next available key ID

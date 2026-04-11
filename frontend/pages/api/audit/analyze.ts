@@ -28,6 +28,14 @@ import {
   runAgent2Verifier,
   runAgent2FinalVerdict,
 } from "../../../lib/audit/agents";
+import { readQuoteRecord, writeBillingRecord, writeQuoteRecord } from "../../../lib/server/auditPricingStore";
+import {
+  computeFinalCharge,
+  countBillableLines,
+  creditsToTDashString,
+  PRICING_VERSION,
+} from "../../../lib/server/pricing";
+
 
 type CollectedFinding = {
   file: string;
@@ -82,7 +90,6 @@ function persistArtifacts(payload: {
   const findingsFile = path.join(scanDir, "findings.json");
   const snippetsFile = path.join(scanDir, "snippets.json");
   const publicFile = path.join(scanDir, "public_package_version.json");
-  const pointerFile = path.join(packageDir, `${safeName(key)}.json`);
 
   const publicPayload: PublicPackageVersionData = {
     key,
@@ -95,11 +102,6 @@ function persistArtifacts(payload: {
   fs.writeFileSync(findingsFile, `${JSON.stringify(payload.findings, null, 2)}\n`, "utf-8");
   fs.writeFileSync(snippetsFile, `${JSON.stringify(payload.snippets, null, 2)}\n`, "utf-8");
   fs.writeFileSync(publicFile, `${JSON.stringify(publicPayload, null, 2)}\n`, "utf-8");
-  fs.writeFileSync(
-    pointerFile,
-    `${JSON.stringify({ key, scan_id: payload.scanRun.scan_id, public_payload_file: publicFile }, null, 2)}\n`,
-    "utf-8"
-  );
 
   return {
     scanDir,
@@ -108,7 +110,7 @@ function persistArtifacts(payload: {
       findings: findingsFile,
       snippets: snippetsFile,
       public_payload: publicFile,
-      package_pointer: pointerFile,
+      package_pointer: path.join(packageDir, `${safeName(key)}.json`),
     },
   };
 }
@@ -119,9 +121,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { name, version = "latest" } = req.body ?? {};
-  if (!name) {
-    return res.status(400).json({ error: "Missing package name" });
+  const { name, version = "latest", quoteId } = req.body ?? {};
+  if (!name || !quoteId) {
+    return res.status(400).json({ error: "Missing package name or quoteId" });
   }
 
   const normalizedName = normalizePackageName(String(name));
@@ -150,6 +152,32 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     logger.sendEvent("info", { label: `Resolved ${normalizedName}@${normalizedResolvedVersion}` });
 
+    const quote = readQuoteRecord(String(quoteId));
+    if (!quote) {
+      logger.sendEvent("error", { message: `Quote "${quoteId}" not found` });
+      res.end();
+      return;
+    }
+    if (quote.package !== normalizedName || quote.version !== normalizedResolvedVersion) {
+      logger.sendEvent("error", { message: "Quote does not match the requested package version" });
+      res.end();
+      return;
+    }
+    if (new Date(quote.expires_at).getTime() < Date.now()) {
+      logger.sendEvent("error", { message: "Quote has expired" });
+      res.end();
+      return;
+    }
+    if (quote.status !== "accepted" && quote.status !== "pending") {
+      logger.sendEvent("error", { message: "Quote is not valid for billing" });
+      res.end();
+      return;
+    }
+
+    if (quote.status === "pending") {
+      writeQuoteRecord({ ...quote, status: "accepted" });
+    }
+
     // ── Step 2: Fetch source code ──
     logger.sendEvent("phase", { label: "Scanning package structure" });
 
@@ -169,7 +197,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logger.sendEvent("phase", { label: "🧭 Skill Router: Selecting relevant security guides..." });
 
     const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
-    const client = new CopilotClient();
+    const client = new CopilotClient({
+      githubToken: (req.headers["x-github-token"] as string) || process.env.GITHUB_TOKEN || process.env.COPILOT_API_KEY,
+    });
 
     // Build manifest of all available skill files
     const { skillDir, manifest } = buildSkillManifest();
@@ -515,6 +545,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         tags: ["automated-audit", item.source],
         line_start: lineStart,
         line_end: lineEnd,
+        line_numbers: item.lineNumbers,
+
         reasoning: item.description,
         snippet_id: `snippet_${sha256(snippetSeed).slice(0, 16)}`,
         reviewed: false,
@@ -531,6 +563,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       normalizedResolvedVersion,
       tarballSha512,
     );
+    const billableLines = countBillableLines(fileContentMap);
+    const durationMs = Date.now() - logger.getStartTime();
+
     const scanRun: ScanRunRecord = {
       scan_id: scanId,
       package: normalizedName,
@@ -542,7 +577,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       verdict: toAuditVerdict(finalVerdictValue),
       severity_summary: severitySummary,
       files_scanned: fetchedFiles.length,
-      duration_ms: Date.now() - logger.getStartTime(),
+      billable_lines: billableLines,
+      duration_ms: durationMs,
     };
 
     const artifacts = persistArtifacts({
@@ -564,6 +600,33 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
+    const finalCharge = computeFinalCharge({
+      billableLines,
+      durationMs,
+      acceptedCeilingCredits: BigInt(quote.ceiling_amount_credits),
+    });
+
+    writeBillingRecord({
+      scan_id: scanId,
+      quote_id: quote.quote_id,
+      package: normalizedName,
+      version: normalizedResolvedVersion,
+      pricing_version: PRICING_VERSION,
+      billable_lines: billableLines,
+      actual_duration_ms: durationMs,
+      actual_minutes: finalCharge.actualMinutes,
+      line_charge_credits: finalCharge.breakdown.lineChargeCredits,
+      time_charge_credits: finalCharge.breakdown.timeChargeCredits,
+      ceiling_amount_credits: quote.ceiling_amount_credits,
+      final_amount_credits: finalCharge.finalAmountCredits.toString(),
+      payment_status: "pending",
+      payer_identity_id: null,
+      recipient_identity_id: process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID || null,
+      transition_id: null,
+      paid_at: null,
+      publication_status: "pending",
+    });
+
     await client.stop();
     logger.log(`═══════════════════════════════════════════════════`);
     logger.log(`AUDIT COMPLETE: ${normalizedName}@${normalizedResolvedVersion}`);
@@ -571,10 +634,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logger.log(`Duration: ${((Date.now() - logger.getStartTime()) / 1000).toFixed(1)}s`);
     logger.log(`JSON output dir: ${artifacts.scanDir}`);
     logger.log(`═══════════════════════════════════════════════════`);
-    logger.sendEvent("done", { label: "Audit complete — verified by 2 independent agents" });
-  } catch (err: any) {
-    logger.log(`ERROR: ${err.message ?? "Audit failed"}`);
-    logger.sendEvent("error", { message: err.message ?? "Audit failed" });
+    logger.sendEvent("done", {
+      label: "Audit complete — final price is ready and the report is locked pending payment",
+      scanId,
+      finalAmountCredits: finalCharge.finalAmountCredits.toString(),
+      finalAmountTDash: creditsToTDashString(finalCharge.finalAmountCredits),
+      estimateAmountTDash: creditsToTDashString(BigInt(quote.ceiling_amount_credits)),
+      paymentStatus: "pending",
+      reportLocked: true,
+      billableLines,
+      actualMinutes: finalCharge.actualMinutes,
+    });
+
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Audit failed";
+    logger.log(`ERROR: ${message}`);
+    logger.sendEvent("error", { message });
   }
 
   logger.flushLog();

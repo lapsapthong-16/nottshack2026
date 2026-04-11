@@ -346,3 +346,58 @@ Your project MUST have real DCAI L3 interaction. Valid integrations:
 | MerkleRewardDistributor | `0x728f2C63b9A0ff0918F5ffB3D4C2d004107476B7` |
 | DCAI Token (Base mainnet) | `0xb8147ce9b0dac5f8165785dec6494e57748e4b78` |
 | Staking (Base mainnet) | `0xc26951b472906a8d44762ec189037bccf7756be9` |
+
+## Variables (.env)
+DCAI_API_KEY=51c164ea2954246fdc2da538954385c8
+DCAI_RPC_ENDPOINT=http://139.180.140.143/rpc/basic/51c164ea2954246fdc2da538954385c8/
+
+### ACCESS AND ENDPOINTS
+Use your revealed DCAI API key with the DCAI RPC endpoint. This endpoint supports real JSON-RPC calls to DCAI L3, including reads, writes, contract deployment, and contract interaction if your wallet or app sends valid transactions.
+
+####BASE ENDPOINT
+http://139.180.140.143/rpc/basic/<your_api_key>/
+Use your revealed DCAI API key in this URL. Send JSON-RPC POST requests to this endpoint from Postman, curl, your backend, or your frontend app.
+
+POSTMAN / JSON BODY EXAMPLES
+GET CHAIN ID
+{"jsonrpc": "2.0", "id":1, "method": "eth_chainId", "params": [1}
+Expected result: 0x4809
+
+GET LATEST BLOCK
+{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}
+simple health check to confirm the network is alive
+
+GET WALLET BALANCE
+{"jsonrpc":"2.0","id":1,"method":"eth_getBalance","params":["0xe169c7a12fb79dac3d1ed5c4ce74537a07d9f8c8","latest"]}
+returns the address balance in wei
+
+READ CONTRACT
+{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0x08A8C0497f2756676dEeE5ba32935B2152adF968","data":"0x70a08231000000000000000000000000e169c7a12fb79dac3d1ed5c4ce74537a07d9f8c8"},"latest"]}
+Example read call to query ERC-721 balanceOf(address).
+
+WRITE/DEPLOY SUPPORT
+Use eth_estimateGas + eth_sendRawTransaction with a signed transaction from your app or wallet.
+This endpoint can broadcast signed transactions, so you can write to contracts, mint, deploy tokens, or integrate with your own contracts if you sign correctly client-side.
+
+## QUICK DEV EXAMPLES
+CURL EXAMPLE
+curl -s http://139.180.140.143/rpc/basic/<your_api_key>/   -H 'Content-Type: application/json'   --data '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}'
+Use this in terminal to confirm your key and RPC endpoint are working.
+
+ETHER.JS example
+import { JsonRpcProvider } from 'ethers';
+const rpc = 'http://139.180.140.143/rpc/basic/<your_api_key>/';
+const provider = new JsonRpcProvider(rpc);
+const block = await provider.getBlockNumber();
+console.log(block);
+
+Use this in your app backend or frontend to read DCAI L3.
+
+What your API key can do
+• Read chain data
+• Get balances
+• Read contracts with eth_call
+• Estimate gas
+• Broadcast signed transactions
+• Deploy tokens / interact with contracts
+• Integrate DCAI L3 into your app backend or frontend

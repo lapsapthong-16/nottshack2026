@@ -29,7 +29,7 @@ export default function Header({
     <header className="flex items-center border-b border-[#e0dbd4] bg-[#f0ebe4] px-6 py-3">
       <Link
         href="/"
-        className="text-base font-bold tracking-tight text-[#1a1a1a] no-underline"
+        className="font-display text-lg font-bold tracking-tight text-[#1a1a1a] no-underline transition-opacity hover:opacity-80"
       >
         Validus
       </Link>
@@ -38,19 +38,19 @@ export default function Header({
       <nav className="ml-8 flex items-center gap-6">
         <Link
           href="/check"
-          className="text-sm font-medium text-[#6b6b6b] no-underline transition hover:text-[#1a1a1a]"
+          className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]"
         >
           Audit
         </Link>
         <Link
           href="/report"
-          className="text-sm font-medium text-[#6b6b6b] no-underline transition hover:text-[#1a1a1a]"
+          className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]"
         >
-          Report
+          Reports
         </Link>
         <Link
           href="/profile"
-          className="text-sm font-medium text-[#6b6b6b] no-underline transition hover:text-[#1a1a1a]"
+          className="text-sm font-medium text-[#6b6b6b] no-underline transition-colors hover:text-[#1a1a1a]"
         >
           Profile
         </Link>
@@ -59,8 +59,11 @@ export default function Header({
       {showProgress && (
         <div className="ml-auto flex items-center gap-5">
           <div className="flex items-center gap-2">
-            <span className="inline-block h-2 w-2 rounded-full bg-[#4ade80]" />
-            <span className="text-sm font-medium text-[#1a1a1a]">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
+            </span>
+            <span className="text-sm font-semibold text-[#1a1a1a]">
               {packageName}
             </span>
           </div>
@@ -75,22 +78,22 @@ export default function Header({
 
             {/* Point 2: Verifier Agent */}
             <div className={`relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-colors ${isStep2Done ? "bg-[#4ade80]" : isStep2Active ? "bg-[#e8a85c]" : "bg-[#d6d0c8]"}`}>
-               {isStep2Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
+              {isStep2Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
             </div>
             <div className={`h-[2px] w-6 transition-colors duration-500 ${isStep2Done ? "bg-[#4ade80]" : "bg-[#d6d0c8]"}`} />
 
             {/* Point 3: Summary / Finalization */}
             <div className={`relative flex h-2.5 w-2.5 items-center justify-center rounded-full transition-colors ${isStep3Done ? "bg-[#4ade80]" : isStep3Active ? "bg-[#e8a85c]" : "bg-[#d6d0c8]"}`}>
-               {isStep3Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
+              {isStep3Active && <div className="absolute h-full w-full animate-ping rounded-full bg-[#e8a85c] opacity-75"></div>}
             </div>
           </div>
 
           {filesTotal !== undefined && (
             <span className="text-xs font-medium text-[#8a8580] w-[130px] text-right">
               {isStep3Done ? "Complete" :
-               isStep3Active ? "Summarizing..." :
-               isStep2Active ? "Verifying..." :
-               `Scanning ${filesScanned ?? 0}/${filesTotal} files`}
+                isStep3Active ? "Summarizing..." :
+                  isStep2Active ? "Verifying..." :
+                    `Scanning ${filesScanned ?? 0}/${filesTotal} files`}
             </span>
           )}
 

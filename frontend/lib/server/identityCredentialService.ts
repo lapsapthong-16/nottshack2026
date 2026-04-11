@@ -3,7 +3,7 @@ import {
   createClient,
   fetchIdentityById,
   matchPrivateKeyToIdentityKey,
-} from "../../setupDashClient.mjs";
+} from "@/setupDashClient.mjs";
 import { getEvoguardConfig } from "./evoguardConfig";
 
 export type IdentityCapabilityStatus = {
