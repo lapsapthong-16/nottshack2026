@@ -27,7 +27,10 @@ export function getEvoguardConfig(): EvoguardConfig {
   return {
     network,
     identityId: readEnv("DASH_IDENTITY_ID"),
-    privateKeyWif: readEnv("EVOGUARD_PRIVATE_KEY_WIF"),
+    privateKeyWif:
+      readEnv("DASH_PRIVATE_CRITICAL_AUTH") ||
+      readEnv("DASH_PRIVATE_MASTER_AUTH") ||
+      readEnv("EVOGUARD_PRIVATE_KEY_WIF"),
     privateKeyHex: readEnv("EVOGUARD_PRIVATE_KEY_HEX"),
     contractId: readEnv("EVOGUARD_CONTRACT_ID"),
     dpnsLabel: readEnv("EVOGUARD_DPNS_LABEL") ?? "evoguard",

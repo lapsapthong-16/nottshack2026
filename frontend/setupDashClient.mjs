@@ -633,6 +633,28 @@ export async function fetchIdentityById(sdk, identityId) {
 }
 
 /**
+ * Return public keys for both Evo SDK 3.0 and 3.1 identity shapes.
+ *
+ * @param {any} identity
+ * @returns {any[]}
+ */
+export function getIdentityPublicKeys(identity) {
+  if (!identity) {
+    return [];
+  }
+
+  if (Array.isArray(identity.publicKeys)) {
+    return identity.publicKeys;
+  }
+
+  if (typeof identity.getPublicKeys === 'function') {
+    return identity.getPublicKeys();
+  }
+
+  return [];
+}
+
+/**
  * @param {string} privateKeyWif
  * @returns {IdentitySigner}
  */
@@ -732,15 +754,14 @@ export function createDataContractFromSchema({
   identityNonce,
   schema,
 }) {
-  return new DataContract(
-    identityId,
+  return new DataContract({
+    ownerId: identityId,
     identityNonce,
-    schema,
-    {},
-    {},
-    false,
-    1,
-  );
+    schemas: schema,
+    definitions: {},
+    fullValidation: false,
+    platformVersion: 1,
+  });
 }
 
 /**
@@ -818,7 +839,7 @@ export async function matchPrivateKeyToIdentityKey({
     const privateKey = parsedKey.privateKey;
     const privateKeyBytes = privateKey.toBytes();
     const signer = parsedKey.signer;
-    const keys = identity.getPublicKeys();
+    const keys = getIdentityPublicKeys(identity);
     const matchingKey = keys.find((key) =>
       key.validatePrivateKey(privateKeyBytes, network),
     );

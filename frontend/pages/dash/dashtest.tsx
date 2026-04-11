@@ -75,6 +75,42 @@ export default function DashTest() {
   const rewardReporter = () =>
     call("Reward Reporter", "/api/dcai/reward-reporter", { method: "POST" });
 
+  const [lastDocId, setLastDocId] = useState<string | null>(null);
+
+  const publishAudit = async () => {
+    setLoading("Publish Audit");
+    setLastDocId(null);
+    try {
+      log(`--- Publish Audit ---`);
+      const body = {
+        pkgName: "express",
+        version: "4.18.2",
+        riskScore: 0,
+        summary: "Package analysis complete. No vulnerabilities detected in the analyzed source files.",
+        malwareDetected: false,
+        auditorSignature: "DASH_AUDIT_SIG_" + Math.random().toString(16).slice(2),
+      };
+
+      const res = await fetch("/api/evoguard/document/store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        log(`Success! Document created.`);
+        log(`Document ID: ${data.documentId}`);
+        setLastDocId(data.documentId);
+      } else {
+        log(`Error: ${data.error}`);
+      }
+    } catch (err: any) {
+      log(`Error: ${err.message}`);
+    } finally {
+      setLoading(null);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 700, margin: "40px auto", fontFamily: "monospace", padding: 20 }}>
       <h1 style={{ fontSize: 24, marginBottom: 8 }}>Dash Platform Test Page</h1>
@@ -108,6 +144,33 @@ export default function DashTest() {
       </Section>
 
       {/* Documents */}
+      <Section title="Manual Audit Publishing">
+        <Btn
+          onClick={publishAudit}
+          loading={loading === "Publish Audit"}
+          color="#10b981"
+          label="Publish Hardcoded Audit"
+        />
+        {lastDocId && (
+          <div style={{ marginTop: 12, fontSize: 13, color: "#aaa" }}>
+            <p>✅ <strong>Audit Published!</strong></p>
+            <p style={{ marginTop: 4 }}>
+              Document ID: <code style={{ background: "#222", padding: "2px 4px", borderRadius: 4, color: "#0f0" }}>{lastDocId}</code>
+            </p>
+            <div style={{ marginTop: 8, display: "flex", gap: 12 }}>
+              <a
+                href={`https://platform-explorer.com/document/${lastDocId}`}
+                target="_blank"
+                rel="noreferrer"
+                style={{ color: "#3b82f6", textDecoration: "underline" }}
+              >
+                View on Platform Explorer
+              </a>
+            </div>
+          </div>
+        )}
+      </Section>
+
       <Section title="Audit Reports (Dash Drive)">
         <Btn
           onClick={storeReport}

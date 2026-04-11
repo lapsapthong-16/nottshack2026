@@ -8,7 +8,7 @@ import {
   SecurityLevel,
 } from "@dashevo/evo-sdk";
 import crypto from "crypto";
-import { createClient } from "../../setupDashClient.mjs";
+import { createClient, getIdentityPublicKeys } from "../../setupDashClient.mjs";
 import { getEvoguardConfig } from "./evoguardConfig";
 import { resolveWritableIdentityContext } from "./identityCredentialService";
 import {
@@ -90,29 +90,34 @@ export async function getContractStatus() {
   }
 }
 
+import { Identifier } from "@dashevo/evo-sdk";
+
 function buildContractForIdentity(ownerId: string, identityNonce: bigint) {
-  return new DataContract(
-    ownerId,
-    (identityNonce || 0n) + 1n,
-    buildEvoguardContractSchema(),
-    null,
-    {},
-    true,
-    1,
-  );
+  return new DataContract({
+    ownerId: Identifier.fromBase58(ownerId),
+    identityNonce: BigInt(identityNonce) + 1n,
+    schemas: buildEvoguardContractSchema(),
+    definitions: {},
+    fullValidation: false,
+    platformVersion: 1,
+  });
 }
 
 export async function deployEvoguardContract() {
   const config = getEvoguardConfig();
   const currentStatus = await getContractStatus();
+  console.log("Current Contract Status:", JSON.stringify(currentStatus));
 
   if (currentStatus.exists && currentStatus.fetchedId) {
+    console.log("Contract already exists, skipping deployment.");
     return {
       id: currentStatus.fetchedId,
       documentTypes: currentStatus.documentTypes,
       verificationFetched: true,
     };
   }
+
+  console.log("Starting real deployment...");
 
   const context = await resolveWritableIdentityContext();
 
@@ -138,21 +143,19 @@ export async function deployEvoguardContract() {
 
     // Find next available key ID
     const identity = context.identity as any;
-    const existingKeys = identity.getPublicKeys ? identity.getPublicKeys() : [];
+    const existingKeys = getIdentityPublicKeys(identity);
     const maxKeyId = existingKeys.reduce((max: number, k: any) => Math.max(max, k.keyId ?? 0), 0);
     const newKeyId = maxKeyId + 1;
 
     // Create the new CRITICAL key
-    const newKeyInCreation = new IdentityPublicKeyInCreation(
-      newKeyId,
-      Purpose.AUTHENTICATION,
-      SecurityLevel.CRITICAL,
-      KeyType.ECDSA_SECP256K1,
-      false,
-      new Uint8Array(newPublicKeyData),
-      undefined,
-      undefined,
-    );
+    const newKeyInCreation = new IdentityPublicKeyInCreation({
+      keyId: newKeyId,
+      purpose: Purpose.AUTHENTICATION,
+      securityLevel: SecurityLevel.CRITICAL,
+      keyType: KeyType.ECDSA_SECP256K1,
+      isReadOnly: false,
+      data: new Uint8Array(newPublicKeyData),
+    });
 
     // Add the new key to the identity using the MASTER signer
     await sdk.identities.update({
@@ -163,7 +166,7 @@ export async function deployEvoguardContract() {
 
     // Re-fetch identity to get the newly added key
     const updatedIdentity = await sdk.identities.fetch(context.identityId);
-    const updatedKeys = updatedIdentity?.getPublicKeys() ?? [];
+    const updatedKeys = getIdentityPublicKeys(updatedIdentity);
     const criticalKey = updatedKeys.find((k: any) => k.keyId === newKeyId);
 
     if (!criticalKey) {
