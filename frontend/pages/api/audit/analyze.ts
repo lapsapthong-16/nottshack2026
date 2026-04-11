@@ -1,95 +1,119 @@
 import type { NextApiRequest, NextApiResponse } from "next";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { fetchPackageCode } from "../../../lib/audit/unpkg";
+import { buildSkillManifest, loadSelectedSkills } from "../../../lib/audit/skills";
+import { AuditLogger } from "../../../lib/audit/logger";
+import { extractSnippets } from "../../../lib/audit/snippets";
+import type {
+  AuditVerdict,
+  FindingRecord,
+  PublicPackageVersionData,
+  ScanRunRecord,
+  Severity,
+  SeveritySummary,
+  SnippetRecord,
+} from "../../../lib/shared/auditSchemas";
+import {
+  buildPackageVersionKey,
+  emptySeveritySummary,
+  normalizePackageName,
+  normalizeVersion,
+} from "../../../lib/shared/auditSchemas";
+import {
+  runAgent0SkillRouter,
+  runAgent1Analyzer,
+  runAgent1FinalTriage,
+  runAgent2Verifier,
+  runAgent2FinalVerdict,
+} from "../../../lib/audit/agents";
 
-/**
- * POST /api/audit/analyze
- *
- * Body: { name: string, version?: string }
- *
- * Fetches the package source from unpkg, then uses the GitHub Copilot SDK
- * to perform a security analysis on each code chunk.
- * Streams progress via Server-Sent Events (SSE).
- */
-
-// ── Helpers ────────────────────────────────────────────────────────
-
-type UnpkgNode = {
-  type: string;
-  path: string;
-  size?: number;
-  files?: UnpkgNode[];
+type CollectedFinding = {
+  file: string;
+  risk: number;
+  description: string;
+  lineNumbers: number[];
+  source: "agent1" | "verifier";
 };
 
-function extractFiles(node: UnpkgNode): UnpkgNode[] {
-  let result: UnpkgNode[] = [];
-  if (node.type !== "directory" && node.path) {
-    result.push(node);
-  }
-  if (node.files && Array.isArray(node.files)) {
-    for (const child of node.files) {
-      result = result.concat(extractFiles(child));
-    }
-  }
-  return result;
+function sha256(input: string): string {
+  return crypto.createHash("sha256").update(input).digest("hex");
 }
 
-async function fetchPackageCode(name: string, version: string) {
-  const metaRes = await fetch(`https://unpkg.com/${name}@${version}/?meta`);
-  if (!metaRes.ok) throw new Error(`Failed to fetch package metadata from unpkg (${metaRes.status})`);
+function toSeverity(risk: number): Severity {
+  if (risk >= 9) return "critical";
+  if (risk >= 7) return "high";
+  if (risk >= 4) return "medium";
+  if (risk >= 1) return "low";
+  return "info";
+}
 
-  const meta: UnpkgNode = await metaRes.json();
-  const allFiles = extractFiles(meta);
+function toAuditVerdict(input: string): AuditVerdict {
+  const verdict = (input ?? "").toUpperCase();
+  if (verdict === "SAFE") return "safe";
+  if (verdict === "SUSPICIOUS" || verdict === "MALICIOUS") return "flagged";
+  if (verdict === "ERROR") return "error";
+  return "unknown";
+}
 
-  // Filter for code files and sort by importance
-  const codeFiles = allFiles
-    .filter(
-      (f) =>
-        (f.size ?? 0) < 50000 &&
-        (f.path.endsWith(".js") ||
-          f.path.endsWith(".ts") ||
-          f.path.endsWith(".json") ||
-          f.path.endsWith(".md"))
-    )
-    .sort((a, b) => {
-      if (a.path === "/package.json") return -1;
-      if (b.path === "/package.json") return 1;
-      return (a.size ?? 0) - (b.size ?? 0);
-    });
+function bumpSeverity(summary: SeveritySummary, severity: Severity): void {
+  summary[severity] += 1;
+}
 
-  const MAX_TOTAL_SIZE = 80000;
-  const chunks: string[] = [];
-  let currentChunk = "";
-  const fetchedFiles: { path: string; size: number }[] = [];
+function safeName(input: string): string {
+  return input.replace(/[^a-zA-Z0-9@._-]/g, "_");
+}
 
-  for (const file of codeFiles) {
-    const fileSize = file.size ?? 0;
-    if (currentChunk.length + fileSize > MAX_TOTAL_SIZE) {
-      if (currentChunk.length > 0) chunks.push(currentChunk);
-      currentChunk = "";
-    }
-    if (fileSize > MAX_TOTAL_SIZE) continue;
+function persistArtifacts(payload: {
+  packageName: string;
+  version: string;
+  scanRun: ScanRunRecord;
+  findings: FindingRecord[];
+  snippets: SnippetRecord[];
+}): { scanDir: string; files: Record<string, string> } {
+  const key = buildPackageVersionKey(payload.packageName, payload.version);
+  const baseDir = path.join(process.cwd(), "logs", "audit", "json");
+  const scanDir = path.join(baseDir, payload.scanRun.scan_id);
+  const packageDir = path.join(baseDir, "by-package");
 
-    try {
-      const fileRes = await fetch(`https://unpkg.com/${name}@${version}${file.path}`);
-      if (fileRes.ok) {
-        const content = await fileRes.text();
-        currentChunk += `\n--- FILE: ${file.path} ---\n${content}\n`;
-        fetchedFiles.push({ path: file.path, size: fileSize });
-      }
-    } catch {
-      // skip failed files
-    }
-  }
+  fs.mkdirSync(scanDir, { recursive: true });
+  fs.mkdirSync(packageDir, { recursive: true });
 
-  if (currentChunk.length > 0) chunks.push(currentChunk);
+  const scanRunFile = path.join(scanDir, "scan_run.json");
+  const findingsFile = path.join(scanDir, "findings.json");
+  const snippetsFile = path.join(scanDir, "snippets.json");
+  const publicFile = path.join(scanDir, "public_package_version.json");
+  const pointerFile = path.join(packageDir, `${safeName(key)}.json`);
+
+  const publicPayload: PublicPackageVersionData = {
+    key,
+    scan_run: payload.scanRun,
+    findings: payload.findings,
+    snippets: payload.snippets,
+  };
+
+  fs.writeFileSync(scanRunFile, `${JSON.stringify(payload.scanRun, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(findingsFile, `${JSON.stringify(payload.findings, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(snippetsFile, `${JSON.stringify(payload.snippets, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(publicFile, `${JSON.stringify(publicPayload, null, 2)}\n`, "utf-8");
+  fs.writeFileSync(
+    pointerFile,
+    `${JSON.stringify({ key, scan_id: payload.scanRun.scan_id, public_payload_file: publicFile }, null, 2)}\n`,
+    "utf-8"
+  );
 
   return {
-    chunks: chunks.length > 0 ? chunks : ["No readable code files found."],
-    fetchedFiles,
-    totalFiles: allFiles.length,
+    scanDir,
+    files: {
+      scan_run: scanRunFile,
+      findings: findingsFile,
+      snippets: snippetsFile,
+      public_payload: publicFile,
+      package_pointer: pointerFile,
+    },
   };
 }
-
-// ── Main handler ──────────────────────────────────────────────────
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -102,387 +126,313 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(400).json({ error: "Missing package name" });
   }
 
-  // Set up SSE
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache, no-transform");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-
-  function sendEvent(type: string, data: any) {
-    res.write(`data: ${JSON.stringify({ type, ...data })}\n\n`);
-  }
+  const normalizedName = normalizePackageName(String(name));
+  const requestedVersion = normalizeVersion(String(version));
+  const logger = new AuditLogger(normalizedName, requestedVersion, res);
 
   try {
     // ── Step 1: Resolve package ──
-    sendEvent("phase", { label: "Resolving package" });
+    logger.sendEvent("phase", { label: "Resolving package" });
 
     // Verify the package exists on npm
-    const npmRes = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}`);
+    const npmRes = await fetch(`https://registry.npmjs.org/${encodeURIComponent(normalizedName)}`);
     if (!npmRes.ok) {
-      sendEvent("error", { message: `Package "${name}" not found on npm` });
+      logger.sendEvent("error", { message: `Package "${normalizedName}" not found on npm` });
       res.end();
       return;
     }
     const npmData = await npmRes.json();
-    const resolvedVersion = version === "latest"
-      ? (npmData["dist-tags"]?.latest ?? version)
-      : version;
+    const resolvedVersion = requestedVersion === "latest"
+      ? (npmData["dist-tags"]?.latest ?? requestedVersion)
+      : requestedVersion;
+    const normalizedResolvedVersion = normalizeVersion(resolvedVersion);
+    const versionMetadata = npmData?.versions?.[normalizedResolvedVersion] ?? {};
+    const registryTarballUrl = String(versionMetadata?.dist?.tarball ?? "");
+    const tarballSha512 = String(versionMetadata?.dist?.integrity ?? "");
 
-    sendEvent("info", { label: `Resolved ${name}@${resolvedVersion}` });
+    logger.sendEvent("info", { label: `Resolved ${normalizedName}@${normalizedResolvedVersion}` });
 
     // ── Step 2: Fetch source code ──
-    sendEvent("phase", { label: "Scanning package structure" });
+    logger.sendEvent("phase", { label: "Scanning package structure" });
 
-    const { chunks, fetchedFiles, totalFiles } = await fetchPackageCode(name, resolvedVersion);
+    const { chunks, chunkFileMap, fileContentMap, fetchedFiles, totalFiles } = await fetchPackageCode(normalizedName, normalizedResolvedVersion);
+  const collectedFindings: CollectedFinding[] = [];
 
-    sendEvent("info", {
+
+    logger.sendEvent("info", {
       label: `Found ${totalFiles} files, fetched ${fetchedFiles.length} code files`,
     });
-    sendEvent("filelist", {
+    logger.sendEvent("filelist", {
       label: "Source files",
       files: fetchedFiles.map((f) => f.path),
     });
 
-    // ── Step 3: Copilot analysis ──
-    sendEvent("phase", { label: "Analyzing source files with Audit Agent" });
+    // ── Step 2.5: Dynamic Skill Selection (Agent 0) ──
+    logger.sendEvent("phase", { label: "🧭 Skill Router: Selecting relevant security guides..." });
 
     const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
     const client = new CopilotClient();
+
+    // Build manifest of all available skill files
+    const { skillDir, manifest } = buildSkillManifest();
+    logger.log(`Skill manifest: ${manifest.length} files available`);
+
+    // Agent 0: Let the LLM pick which skills are relevant
+    const fileListForRouter = fetchedFiles.map((f) => f.path);
+    const firstChunkForRouter = chunks[0] ?? "";
+
+    const { selectedIds, reason, usedFallback } = await runAgent0SkillRouter(
+      manifest,
+      fileListForRouter,
+      firstChunkForRouter,
+      client,
+      approveAll,
+      logger
+    );
+
+    logger.sendEvent("skill_selection", {
+      available: manifest.length,
+      selected: selectedIds,
+      reason,
+      usedFallback,
+    });
+
+    // Load only the selected skill files
+    const securitySkill = loadSelectedSkills(skillDir, manifest, selectedIds);
+    if (securitySkill) {
+      logger.log(`Loaded ${selectedIds.length} selected skills (${Math.round(securitySkill.length / 1024)}KB)`);
+      logger.sendEvent("info", { label: `Selected skills: ${selectedIds.join(", ")} ✓${usedFallback ? " (fallback)" : ""}` });
+    } else {
+      logger.log("No skill files could be loaded — using default prompts");
+    }
+
+    // ── Step 3: Copilot analysis (Agent 1) ──
+    logger.sendEvent("phase", { label: "Analyzing source files with Audit Agent" });
 
     const allAnalyses: string[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
 
-      sendEvent("info", {
+      logger.sendEvent("info", {
         label: `Analyzing chunk ${i + 1}/${chunks.length} (${Math.round(chunk.length / 1024)}KB)...`,
       });
 
-      const session = await client.createSession({
-        model: "gpt-5-mini",
-        onPermissionRequest: approveAll,
-      });
+      const { text, parsed, error } = await runAgent1Analyzer(
+        chunk,
+        i,
+        chunks.length,
+        normalizedName,
+        normalizedResolvedVersion,
+        securitySkill,
+        client,
+        approveAll
+      );
 
-      const prompt = `You are a security auditor. Analyze the npm package "${name}" (version ${resolvedVersion}) for safety and security. I have fetched a chunk of the source code for you to review. (This is chunk ${i + 1} of ${chunks.length}).
+      allAnalyses.push(text);
 
-Look through the provided files for any suspicious patterns, malicious obfuscation, auto-executing commands, data exfiltration, supply chain attack indicators, or other security concerns.
-
-PACKAGE SOURCE CODE (CHUNK ${i + 1}/${chunks.length}):
-${chunk}
-
-Respond in this EXACT JSON format (no markdown, no code fences):
-{
-  "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "riskScore": <number 0-10>,
-  "findings": [
-    { "file": "<filepath>", "risk": <number 0-10>, "description": "<brief description>" }
-  ],
-  "summary": "<2-3 sentence overall summary for this chunk>"
-}`;
-
-      try {
-        const response = await session.sendAndWait({ prompt });
-        const content = response?.data?.content ?? "";
-        allAnalyses.push(content);
-
-        // Try to parse the JSON response
-        try {
-          // Strip any markdown code fences if present
-          const cleaned = content.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
-          const parsed = JSON.parse(cleaned);
-
-          // Send each finding as a flag
-          if (parsed.findings && Array.isArray(parsed.findings)) {
-            for (const finding of parsed.findings) {
-              sendEvent("flag", {
-                label: "flagged",
-                flag: {
-                  file: finding.file,
-                  risk: finding.risk ?? 5,
-                  description: finding.description,
-                },
-              });
-            }
-          }
-
-          sendEvent("chunk_result", {
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            verdict: parsed.verdict,
-            riskScore: parsed.riskScore,
-            summary: parsed.summary,
-            findings: parsed.findings,
-          });
-        } catch {
-          // If JSON parsing fails, send the raw text
-          sendEvent("chunk_result", {
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            verdict: "UNKNOWN",
-            riskScore: 5,
-            summary: content.slice(0, 500),
-            findings: [],
-          });
-        }
-      } catch (err: any) {
-        sendEvent("chunk_result", {
+      if (error) {
+        logger.sendEvent("chunk_result", {
           chunkIndex: i,
           totalChunks: chunks.length,
+          chunkFiles: chunkFileMap[i] ?? [],
           verdict: "ERROR",
           riskScore: 0,
-          summary: `Analysis failed: ${err.message}`,
+          summary: `Analysis failed: ${error.message}`,
+          findings: [],
+        });
+      } else if (parsed) {
+        // Send each finding as a flag
+        if (parsed.findings && Array.isArray(parsed.findings)) {
+          for (const finding of parsed.findings) {
+            const file = typeof finding.file === "string" ? finding.file : "unknown";
+            const risk = typeof finding.risk === "number" ? finding.risk : 5;
+            const description = typeof finding.description === "string" ? finding.description : "No description provided";
+            const lineNumbers = Array.isArray(finding.lineNumbers)
+              ? finding.lineNumbers.filter((n: unknown) => typeof n === "number")
+              : [];
+
+            collectedFindings.push({
+              file,
+              risk,
+              description,
+              lineNumbers,
+              source: "agent1",
+            });
+
+            logger.sendEvent("flag", {
+              label: "flagged",
+              flag: {
+                file,
+                risk,
+                description,
+                lineNumbers,
+              },
+            });
+          }
+        }
+
+        logger.sendEvent("chunk_result", {
+          chunkIndex: i,
+          totalChunks: chunks.length,
+          chunkFiles: chunkFileMap[i] ?? [],
+          verdict: parsed.verdict,
+          riskScore: parsed.riskScore,
+          summary: parsed.summary,
+          findings: parsed.findings,
+        });
+      } else {
+        logger.sendEvent("chunk_result", {
+          chunkIndex: i,
+          totalChunks: chunks.length,
+          chunkFiles: chunkFileMap[i] ?? [],
+          verdict: "UNKNOWN",
+          riskScore: 5,
+          summary: text.slice(0, 500),
           findings: [],
         });
       }
     }
 
     // ── Step 4: Final triage (Agent 1) ──
-    sendEvent("triage", { label: "Agent 1: Compiling initial assessment..." });
+    logger.sendEvent("triage", { label: "Agent 1: Compiling initial assessment..." });
 
-    let agent1Verdict: any = null;
+    const agent1Verdict = await runAgent1FinalTriage(
+      allAnalyses,
+      normalizedName,
+      normalizedResolvedVersion,
+      client,
+      approveAll
+    );
+    logger.sendEvent("agent1_verdict", { agent: "Analyzer", ...agent1Verdict });
 
-    // Ask Copilot for a final combined verdict from Agent 1
-    try {
-      const finalSession = await client.createSession({
-        model: "gpt-5-mini",
-        onPermissionRequest: approveAll,
-      });
-
-      const finalPrompt = `You previously analyzed the npm package "${name}@${resolvedVersion}" in ${chunks.length} chunks. Here are your chunk analyses:
-
-${allAnalyses.join("\n\n---\n\n")}
-
-Now provide a FINAL combined security assessment. Respond in this EXACT JSON format (no markdown, no code fences):
-{
-  "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "riskScore": <number 0-10>,
-  "summary": "<3-5 sentence final security assessment>",
-  "recommendations": ["<action item 1>", "<action item 2>"]
-}`;
-
-      const finalResponse = await finalSession.sendAndWait({ prompt: finalPrompt });
-      const finalContent = finalResponse?.data?.content ?? "";
-
-      try {
-        const cleaned = finalContent.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
-        agent1Verdict = JSON.parse(cleaned);
-      } catch {
-        agent1Verdict = {
-          verdict: "UNKNOWN",
-          riskScore: 5,
-          summary: finalContent.slice(0, 500),
-          recommendations: [],
-        };
-      }
-
-      sendEvent("agent1_verdict", { agent: "Analyzer", ...agent1Verdict });
-    } catch {
-      agent1Verdict = {
-        verdict: "ERROR",
-        riskScore: 0,
-        summary: "Agent 1 failed to generate assessment",
-        recommendations: [],
-      };
-      sendEvent("agent1_verdict", { agent: "Analyzer", ...agent1Verdict });
-    }
-
-    // ═══════════════════════════════════════════════════════════════
     // ── Step 5: VERIFIER AGENT (Agent 2) ──
-    // An independent agent that reviews the SAME source code AND
-    // the first agent's findings, looking for:
-    //   • False positives (overblown risks)
-    //   • False negatives (missed threats)
-    //   • Verdict accuracy
-    // ═══════════════════════════════════════════════════════════════
-    sendEvent("phase", { label: "🔍 Verifier Agent: Independent review starting..." });
+    logger.sendEvent("phase", { label: "🔍 Verifier Agent: Independent review starting..." });
 
     const verifierAnalyses: string[] = [];
 
     for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const analyzerResult = allAnalyses[i] ?? "No analysis available";
+        const chunk = chunks[i];
+        const analyzerResult = allAnalyses[i] ?? "No analysis available";
 
-      sendEvent("info", {
-        label: `Verifier reviewing chunk ${i + 1}/${chunks.length}...`,
-      });
-
-      try {
-        const verifierSession = await client.createSession({
-          model: "gpt-5-mini",
-          onPermissionRequest: approveAll,
+        logger.sendEvent("info", {
+            label: `Verifier reviewing chunk ${i + 1}/${chunks.length}...`,
         });
 
-        const verifierPrompt = `You are an INDEPENDENT security verification agent. Your job is to double-check another agent's security analysis of the npm package "${name}" (version ${resolvedVersion}).
+        const { text, parsed, error } = await runAgent2Verifier(
+            chunk,
+            analyzerResult,
+            i,
+            chunks.length,
+            normalizedName,
+            normalizedResolvedVersion,
+            securitySkill,
+            client,
+            approveAll
+        );
 
-You must:
-1. Independently analyze the source code below for security issues
-2. Compare your findings against Agent 1's analysis
-3. Identify any FALSE POSITIVES (things Agent 1 flagged that are actually safe)
-4. Identify any FALSE NEGATIVES (real threats Agent 1 missed)
-5. Confirm or challenge Agent 1's verdict
+        verifierAnalyses.push(text);
 
-=== AGENT 1's ANALYSIS (CHUNK ${i + 1}/${chunks.length}) ===
-${analyzerResult}
+        if (error) {
+            logger.sendEvent("verifier_chunk", {
+                chunkIndex: i,
+                totalChunks: chunks.length,
+                independentVerdict: "ERROR",
+                agreesWithAgent1: true,
+                notes: `Verification failed: ${error.message}`,
+            });
+        } else if (parsed) {
+            // Send false positives as resolved flags
+            if (parsed.falsePositives && Array.isArray(parsed.falsePositives)) {
+                for (const fp of parsed.falsePositives) {
+                if (fp && fp.trim()) {
+                    logger.sendEvent("verification", {
+                    label: "false_positive",
+                    detail: fp,
+                    });
+                }
+                }
+            }
 
-=== PACKAGE SOURCE CODE (CHUNK ${i + 1}/${chunks.length}) ===
-${chunk}
+            // Send false negatives as new flags
+            if (parsed.falseNegatives && Array.isArray(parsed.falseNegatives)) {
+                for (const fn of parsed.falseNegatives) {
+                if (fn && fn.trim()) {
+                    logger.sendEvent("verification", {
+                    label: "missed_threat",
+                    detail: fn,
+                    });
+                }
+                }
+            }
 
-Respond in this EXACT JSON format (no markdown, no code fences):
-{
-  "independentVerdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "independentRiskScore": <number 0-10>,
-  "agreesWithAgent1": true | false,
-  "falsePositives": ["<description of incorrectly flagged items>"],
-  "falseNegatives": ["<description of missed threats>"],
-  "findings": [
-    { "file": "<filepath>", "risk": <number 0-10>, "description": "<finding>" }
-  ],
-  "verificationNotes": "<2-3 sentences explaining your independent assessment and where you agree/disagree with Agent 1>"
-}`;
+            // Send any new findings from verifier
+            if (parsed.findings && Array.isArray(parsed.findings)) {
+                for (const finding of parsed.findings) {
+                const file = typeof finding.file === "string" ? finding.file : "unknown";
+                const risk = typeof finding.risk === "number" ? finding.risk : 5;
+                const description = typeof finding.description === "string" ? finding.description : "No description provided";
 
-        const verifierResponse = await verifierSession.sendAndWait({ prompt: verifierPrompt });
-        const verifierContent = verifierResponse?.data?.content ?? "";
-        verifierAnalyses.push(verifierContent);
-
-        try {
-          const cleaned = verifierContent.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
-          const parsed = JSON.parse(cleaned);
-
-          // Send false positives as resolved flags
-          if (parsed.falsePositives && Array.isArray(parsed.falsePositives)) {
-            for (const fp of parsed.falsePositives) {
-              if (fp && fp.trim()) {
-                sendEvent("verification", {
-                  label: "false_positive",
-                  detail: fp,
+                collectedFindings.push({
+                  file,
+                  risk,
+                  description,
+                  lineNumbers: [],
+                  source: "verifier",
                 });
-              }
-            }
-          }
 
-          // Send false negatives as new flags
-          if (parsed.falseNegatives && Array.isArray(parsed.falseNegatives)) {
-            for (const fn of parsed.falseNegatives) {
-              if (fn && fn.trim()) {
-                sendEvent("verification", {
-                  label: "missed_threat",
-                  detail: fn,
+                logger.sendEvent("flag", {
+                    label: "verifier_flagged",
+                    flag: {
+                    file,
+                    risk,
+                    description: `[Verifier] ${description}`,
+                    },
                 });
-              }
+                }
             }
-          }
 
-          // Send any new findings from verifier
-          if (parsed.findings && Array.isArray(parsed.findings)) {
-            for (const finding of parsed.findings) {
-              sendEvent("flag", {
-                label: "verifier_flagged",
-                flag: {
-                  file: finding.file,
-                  risk: finding.risk ?? 5,
-                  description: `[Verifier] ${finding.description}`,
-                },
-              });
-            }
-          }
-
-          sendEvent("verifier_chunk", {
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            independentVerdict: parsed.independentVerdict,
-            agreesWithAgent1: parsed.agreesWithAgent1,
-            notes: parsed.verificationNotes,
-          });
-        } catch {
-          sendEvent("verifier_chunk", {
-            chunkIndex: i,
-            totalChunks: chunks.length,
-            independentVerdict: "UNKNOWN",
-            agreesWithAgent1: true,
-            notes: verifierContent.slice(0, 500),
-          });
+            logger.sendEvent("verifier_chunk", {
+                chunkIndex: i,
+                totalChunks: chunks.length,
+                independentVerdict: parsed.independentVerdict,
+                agreesWithAgent1: parsed.agreesWithAgent1,
+                notes: parsed.verificationNotes,
+            });
+        } else {
+            logger.sendEvent("verifier_chunk", {
+                chunkIndex: i,
+                totalChunks: chunks.length,
+                independentVerdict: "UNKNOWN",
+                agreesWithAgent1: true,
+                notes: text.slice(0, 500),
+            });
         }
-      } catch (err: any) {
-        sendEvent("verifier_chunk", {
-          chunkIndex: i,
-          totalChunks: chunks.length,
-          independentVerdict: "ERROR",
-          agreesWithAgent1: true,
-          notes: `Verification failed: ${err.message}`,
-        });
-      }
     }
 
     // ── Step 6: Verifier's final verdict ──
-    sendEvent("triage", { label: "Verifier Agent: Compiling verification report..." });
+    logger.sendEvent("triage", { label: "Verifier Agent: Compiling verification report..." });
 
-    let agent2Verdict: any = null;
+    const agent2Verdict = await runAgent2FinalVerdict(
+        agent1Verdict,
+        verifierAnalyses,
+        normalizedName,
+        normalizedResolvedVersion,
+        client,
+        approveAll
+    );
+    logger.sendEvent("agent2_verdict", { agent: "Verifier", ...agent2Verdict });
 
-    try {
-      const verifierFinalSession = await client.createSession({
-        model: "gpt-5-mini",
-        onPermissionRequest: approveAll,
-      });
-
-      const verifierFinalPrompt = `You are the VERIFIER agent. You have independently reviewed the npm package "${name}@${resolvedVersion}" and cross-checked Agent 1's analysis.
-
-=== AGENT 1's FINAL VERDICT ===
-${JSON.stringify(agent1Verdict, null, 2)}
-
-=== YOUR CHUNK-BY-CHUNK VERIFICATION ===
-${verifierAnalyses.join("\n\n---\n\n")}
-
-Now provide your FINAL verification report. If you disagree with Agent 1, explain why. Respond in this EXACT JSON format (no markdown, no code fences):
-{
-  "verdict": "SAFE" | "SUSPICIOUS" | "MALICIOUS",
-  "riskScore": <number 0-10>,
-  "agreesWithAgent1": true | false,
-  "confidence": <number 0-100>,
-  "summary": "<3-5 sentence verification summary>",
-  "disagreements": ["<point of disagreement>"],
-  "recommendations": ["<action item>"]
-}`;
-
-      const verifierFinalResponse = await verifierFinalSession.sendAndWait({ prompt: verifierFinalPrompt });
-      const verifierFinalContent = verifierFinalResponse?.data?.content ?? "";
-
-      try {
-        const cleaned = verifierFinalContent.replace(/```json?\n?/g, "").replace(/```\n?/g, "").trim();
-        agent2Verdict = JSON.parse(cleaned);
-      } catch {
-        agent2Verdict = {
-          verdict: "UNKNOWN",
-          riskScore: 5,
-          agreesWithAgent1: true,
-          confidence: 50,
-          summary: verifierFinalContent.slice(0, 500),
-          disagreements: [],
-          recommendations: [],
-        };
-      }
-
-      sendEvent("agent2_verdict", { agent: "Verifier", ...agent2Verdict });
-    } catch {
-      agent2Verdict = {
-        verdict: "ERROR",
-        riskScore: 0,
-        agreesWithAgent1: true,
-        confidence: 0,
-        summary: "Verifier agent failed",
-        disagreements: [],
-        recommendations: [],
-      };
-      sendEvent("agent2_verdict", { agent: "Verifier", ...agent2Verdict });
-    }
 
     // ── Step 7: Resolve final verdict (tie-break if agents disagree) ──
     const agent1V = agent1Verdict?.verdict ?? "UNKNOWN";
     const agent2V = agent2Verdict?.verdict ?? "UNKNOWN";
     const agrees = agent2Verdict?.agreesWithAgent1 !== false && agent1V === agent2V;
+    const riskOrder: Record<string, number> = { SAFE: 0, SUSPICIOUS: 1, MALICIOUS: 2, UNKNOWN: 1, ERROR: 0 };
 
     if (agrees) {
       // Both agents agree — use the consensus verdict
-      sendEvent("final_verdict", {
+      logger.sendEvent("final_verdict", {
         verdict: agent1V,
         riskScore: Math.round(((agent1Verdict?.riskScore ?? 0) + (agent2Verdict?.riskScore ?? 0)) / 2),
         summary: `✅ Both agents agree: ${agent1Verdict?.summary ?? ""}\n\nVerifier confirms: ${agent2Verdict?.summary ?? ""}`,
@@ -495,14 +445,13 @@ Now provide your FINAL verification report. If you disagree with Agent 1, explai
         agent2Verdict: agent2V,
       });
     } else {
-      // Agents DISAGREE — use the more cautious (higher risk) verdict
-      sendEvent("phase", { label: "⚖️ Agents disagree — resolving with tie-breaker..." });
+      // Agents DISAGREE — use the more cautious (higher Risk) verdict
+      logger.sendEvent("phase", { label: "⚖️ Agents disagree — resolving with tie-breaker..." });
 
-      const riskOrder: Record<string, number> = { SAFE: 0, SUSPICIOUS: 1, MALICIOUS: 2, UNKNOWN: 1, ERROR: 0 };
       const moreRisky = (riskOrder[agent2V] ?? 0) >= (riskOrder[agent1V] ?? 0) ? agent2V : agent1V;
       const higherRisk = Math.max(agent1Verdict?.riskScore ?? 0, agent2Verdict?.riskScore ?? 0);
 
-      sendEvent("final_verdict", {
+      logger.sendEvent("final_verdict", {
         verdict: moreRisky,
         riskScore: higherRisk,
         summary: `⚠️ Agents disagreed: Agent 1 says ${agent1V} (risk ${agent1Verdict?.riskScore ?? "?"}), Verifier says ${agent2V} (risk ${agent2Verdict?.riskScore ?? "?"}). Using the more cautious assessment.\n\nAgent 1: ${agent1Verdict?.summary ?? ""}\n\nVerifier: ${agent2Verdict?.summary ?? ""}`,
@@ -517,12 +466,88 @@ Now provide your FINAL verification report. If you disagree with Agent 1, explai
       });
     }
 
+    const finalVerdictValue = agrees ? agent1V : ((riskOrder[agent2V] ?? 0) >= (riskOrder[agent1V] ?? 0) ? agent2V : agent1V);
+    const severitySummary = emptySeveritySummary();
+
+    const scanId = `scan_${Date.now()}_${sha256(`${normalizedName}@${normalizedResolvedVersion}`).slice(0, 10)}`;
+    const findings: FindingRecord[] = collectedFindings.map((item, idx) => {
+      const severity = toSeverity(item.risk);
+      bumpSeverity(severitySummary, severity);
+
+      const findingSeed = `${scanId}|${item.source}|${item.file}|${item.description}|${idx}`;
+      const snippetSeed = `${scanId}|snippet|${item.file}|${idx}`;
+
+      return {
+        finding_id: `finding_${sha256(findingSeed).slice(0, 16)}`,
+        scan_id: scanId,
+        package: normalizedName,
+        version: normalizedResolvedVersion,
+        file: item.file,
+        file_sha256: sha256(fileContentMap[item.file] ?? fileContentMap["/" + item.file] ?? item.file),
+        severity,
+        tags: ["automated-audit", item.source],
+        reasoning: item.description,
+        snippet_id: `snippet_${sha256(snippetSeed).slice(0, 16)}`,
+        reviewed: false,
+        reviewer_notes: null,
+        false_positive: null,
+      };
+    });
+
+    const snippets: SnippetRecord[] = extractSnippets(
+      findings,
+      collectedFindings,
+      fileContentMap,
+      normalizedName,
+      normalizedResolvedVersion,
+      tarballSha512,
+    );
+    const scanRun: ScanRunRecord = {
+      scan_id: scanId,
+      package: normalizedName,
+      version: normalizedResolvedVersion,
+      registry_tarball_url: registryTarballUrl,
+      tarball_sha512: tarballSha512,
+      scanned_at: new Date().toISOString(),
+      triggered_by: "api.audit.analyze",
+      verdict: toAuditVerdict(finalVerdictValue),
+      severity_summary: severitySummary,
+      files_scanned: fetchedFiles.length,
+      duration_ms: Date.now() - logger.getStartTime(),
+    };
+
+    const artifacts = persistArtifacts({
+      packageName: normalizedName,
+      version: normalizedResolvedVersion,
+      scanRun,
+      findings,
+      snippets,
+    });
+
+    logger.sendEvent("artifacts", {
+      label: "Persisted JSON artifacts",
+      scanId,
+      outputDir: artifacts.scanDir,
+      files: artifacts.files,
+      counts: {
+        findings: findings.length,
+        snippets: snippets.length,
+      },
+    });
+
     await client.stop();
-    sendEvent("done", { label: "Audit complete — verified by 2 independent agents" });
+    logger.log(`═══════════════════════════════════════════════════`);
+    logger.log(`AUDIT COMPLETE: ${normalizedName}@${normalizedResolvedVersion}`);
+    logger.log(`Total events: ${logger.getLogLinesCount()}`);
+    logger.log(`Duration: ${((Date.now() - logger.getStartTime()) / 1000).toFixed(1)}s`);
+    logger.log(`JSON output dir: ${artifacts.scanDir}`);
+    logger.log(`═══════════════════════════════════════════════════`);
+    logger.sendEvent("done", { label: "Audit complete — verified by 2 independent agents" });
   } catch (err: any) {
-    sendEvent("error", { message: err.message ?? "Audit failed" });
+    logger.log(`ERROR: ${err.message ?? "Audit failed"}`);
+    logger.sendEvent("error", { message: err.message ?? "Audit failed" });
   }
 
+  logger.flushLog();
   res.end();
 }
-

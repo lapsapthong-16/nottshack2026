@@ -2,6 +2,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState, useRef, useMemo } from "react";
 import Head from "next/head";
 import Header from "@/components/Header";
+import { normalizePackageName, normalizeVersion } from "@/lib/shared/auditSchemas";
 
 // --- Types ---
 
@@ -17,10 +18,11 @@ type Flag = {
   file: string;
   risk: number;
   description: string;
+  lineNumbers?: number[];
 };
 
 type ActivityStep = {
-  type: "phase" | "info" | "filelist" | "flag" | "triage" | "done" | "verdict" | "verification" | "agent_verdict";
+  type: "phase" | "info" | "filelist" | "flag" | "triage" | "done" | "verdict" | "verification" | "agent_verdict" | "skill_selection";
   label: string;
   files?: string[];
   flag?: Flag;
@@ -31,6 +33,9 @@ type ActivityStep = {
   agreesWithAgent1?: boolean;
   confidence?: number;
   detail?: string;
+  selected?: string[];
+  usedFallback?: boolean;
+  reason?: string;
 };
 
 type CodeLine = {
@@ -51,10 +56,11 @@ type FileView = {
 type ChunkResult = {
   chunkIndex: number;
   totalChunks: number;
+  chunkFiles?: string[];
   verdict: string;
   riskScore: number;
   summary: string;
-  findings: { file: string; risk: number; description: string }[];
+  findings: { file: string; risk: number; description: string; lineNumbers?: number[] }[];
 };
 
 // ─── Syntax highlighting ────────────────────────────────────────
@@ -280,6 +286,34 @@ function ActivityPanel({
               </div>
             )}
 
+            {step.type === "skill_selection" && step.selected && (
+              <div className="ml-3.5 rounded-lg border border-[#c8d0e0] bg-gradient-to-br from-[#f0f3fa] to-[#e8ecf5] p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="rounded bg-[#5c6e94] px-2 py-0.5 text-[10px] font-bold uppercase text-white">
+                    🧭 Skill Router
+                  </span>
+                  {step.usedFallback && (
+                    <span className="rounded-full bg-[#f0e8d0] px-2 py-0.5 text-[10px] font-bold text-[#94763d]">
+                      fallback
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {step.selected.map((skill, si) => (
+                    <span
+                      key={`skill-${si}-${skill}`}
+                      className="inline-flex items-center rounded-md border border-[#c0c8d8] bg-white/80 px-2 py-0.5 text-[11px] font-mono font-medium text-[#4a5a7a]"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+                {step.reason && (
+                  <p className="text-[11px] text-[#6b7b9b] leading-4 italic">{step.reason}</p>
+                )}
+              </div>
+            )}
+
             {step.type === "triage" && (
               <div className="flex items-center gap-2 mt-2">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#d4a03c] animate-pulse" />
@@ -342,19 +376,32 @@ function CodeViewer({
   allFileViews,
   activeIndex,
   onTabClick,
+  isLoading,
 }: {
   fileView: FileView | null;
   allFileViews: FileView[];
   activeIndex: number;
   onTabClick: (i: number) => void;
+  isLoading?: boolean;
 }) {
-  if (!fileView) {
+  if (isLoading) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-white text-[#a8a8a8]">
         <div className="animate-pulse text-center">
-          <div className="text-4xl mb-3">🔍</div>
-          <p className="text-sm text-[#8a8580]">Waiting for analysis results...</p>
-          <p className="text-xs mt-1 text-[#a8a09a]">Code will appear here once files are scanned</p>
+          <div className="text-4xl mb-3">📂</div>
+          <p className="text-sm text-[#8a8580]">Loading source code...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!fileView) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center bg-white text-[#a8a8a8]">
+        <div className="text-center">
+          <div className="text-4xl mb-3">📄</div>
+          <p className="text-sm text-[#8a8580]">Click any file in the right panel to view its source</p>
+          <p className="text-xs mt-1 text-[#a8a09a]">Files with findings will appear as tabs automatically</p>
         </div>
       </div>
     );
@@ -362,26 +409,16 @@ function CodeViewer({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* File tabs */}
-      <div className="flex items-center gap-0 border-b border-[#e0dbd4] bg-[#f7f3ee]">
-        <div className="flex flex-1 items-center overflow-x-auto">
-          {allFileViews.map((fv, i) => (
-            <button
-              key={`tab-${i}-${fv.path}`}
-              type="button"
-              onClick={() => onTabClick(i)}
-              className={`cursor-pointer border-r border-[#e0dbd4] px-4 py-2.5 text-[13px] font-mono transition ${
-                i === activeIndex
-                  ? "bg-white font-medium text-[#1a1a1a] border-b-2 border-b-[#8b6fad]"
-                  : "text-[#8a8580] hover:bg-[#ede8e1] border-b-2 border-b-transparent"
-              }`}
-            >
-              {fv.name}
-            </button>
-          ))}
+      {/* Current file header */}
+      <div className="flex items-center justify-between border-b border-[#e0dbd4] bg-[#f7f3ee] px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-[#a8a09a]">📄</span>
+          <span className="font-mono text-[13px] font-medium text-[#1a1a1a]">
+            {fileView.path}
+          </span>
         </div>
         {/* Tags */}
-        <div className="flex items-center gap-1.5 px-3">
+        <div className="flex items-center gap-1.5">
           {fileView.tags.map((tag, ti) => {
             const colors: Record<string, string> = {
               DOM_MANIPULATION: "bg-[#f0dde0] text-[#943d4a]",
@@ -507,8 +544,12 @@ function FilesPanel({
 export default function Check() {
   const router = useRouter();
   const { name, version } = router.query;
-  const pkgName = typeof name === "string" ? name : "unknown-package";
-  const pkgVersion = typeof version === "string" ? version : "latest";
+  const pkgName = normalizePackageName(
+    typeof name === "string" ? name : Array.isArray(name) ? (name[0] ?? "unknown-package") : "unknown-package"
+  );
+  const pkgVersion = normalizeVersion(
+    typeof version === "string" ? version : Array.isArray(version) ? version[0] : "latest"
+  );
 
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
   const [visibleSteps, setVisibleSteps] = useState(0);
@@ -516,55 +557,132 @@ export default function Check() {
   const [fileViews, setFileViews] = useState<FileView[]>([]);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [isAuditing, setIsAuditing] = useState(false);
+  const [isLoadingFile, setIsLoadingFile] = useState(false);
   const [finalVerdict, setFinalVerdict] = useState<{ verdict: string; riskScore: number; summary: string } | null>(null);
 
   // Accumulate chunk results to build file views
   const chunkResults = useRef<ChunkResult[]>([]);
+  // Synchronous guard to prevent double audit fire (React StrictMode)
+  const auditStarted = useRef(false);
+  // Per-file findings map: path → [{ description, risk, lineNumbers }]
+  const findingsMap = useRef<Record<string, { description: string; risk: number; lineNumbers: number[] }[]>>({});
+  // Per-file summary map: path → summary string (from chunk_result events)
+  const fileSummaryMap = useRef<Record<string, string>>({});
+  // Track how many total files exist in the package (from unpkg metadata)
+  const [totalPackageFiles, setTotalPackageFiles] = useState(0);
+  // Track actual audit progress phases for the progress bar
+  const [auditPhase, setAuditPhase] = useState(0); // 0-8 representing each audit pipeline stage
+  const totalAuditPhases = 8; // resolve, fetch, skill, analyze, triage1, verify, triage2, done
+
+  // Fetch actual source code from unpkg
+  async function fetchFileSource(filePath: string): Promise<CodeLine[]> {
+    try {
+      const res = await fetch(`https://unpkg.com/${pkgName}@${pkgVersion}${filePath}`);
+      if (!res.ok) return [];
+      const content = await res.text();
+      return content.split("\n").slice(0, 500).map((text, i) => ({ num: i + 1, text }));
+    } catch {
+      return [];
+    }
+  }
+
+  // Create or update a file view with actual source code
+  async function ensureFileView(
+    filePath: string,
+    findings: string[] = [],
+    tags: string[] = ["SAFE"],
+    summary: string = "No security findings for this file.",
+    highlightLines: number[] = []
+  ): Promise<number> {
+    // Check if already loaded with real content
+    const existingIdx = fileViews.findIndex((fv) => fv.path === filePath);
+    if (existingIdx !== -1 && fileViews[existingIdx].lines.length > 3) {
+      // Already has real content — update findings and highlights if new
+      if (findings.length > 0 || highlightLines.length > 0) {
+        const hlSet = new Set(highlightLines);
+        setFileViews((prev) => {
+          const updated = [...prev];
+          const existing = updated[existingIdx];
+          const newFindings = findings.filter((f) => !existing.findings.includes(f));
+          const updatedLines = hlSet.size > 0
+            ? existing.lines.map((l) => hlSet.has(l.num) ? { ...l, highlighted: true } : l)
+            : existing.lines;
+          updated[existingIdx] = {
+            ...existing,
+            lines: updatedLines,
+            findings: [...existing.findings, ...newFindings],
+            tags: findings.length > 0 ? tags : existing.tags,
+            summary: newFindings.length > 0 ? newFindings.join("; ") : existing.summary,
+          };
+          return updated;
+        });
+      }
+      return existingIdx;
+    }
+
+    // Fetch actual source code
+    const lines = await fetchFileSource(filePath);
+    const fileName = filePath.split("/").pop() ?? filePath;
+
+    if (lines.length === 0) {
+      lines.push({ num: 1, text: `// File: ${filePath}` });
+      lines.push({ num: 2, text: `// Source could not be loaded` });
+    }
+
+    // Apply line highlights
+    const hlSet = new Set(highlightLines);
+    if (hlSet.size > 0) {
+      for (const line of lines) {
+        if (hlSet.has(line.num)) line.highlighted = true;
+      }
+    }
+
+    const newView: FileView = {
+      name: fileName,
+      path: filePath,
+      tags,
+      lines,
+      findings,
+      summary,
+    };
+
+    let newIndex = 0;
+    setFileViews((prev) => {
+      const idx = prev.findIndex((v) => v.path === filePath);
+      if (idx !== -1) {
+        const updated = [...prev];
+        updated[idx] = {
+          ...newView,
+          findings: [...prev[idx].findings, ...findings.filter((f) => !prev[idx].findings.includes(f))],
+        };
+        newIndex = idx;
+        return updated;
+      }
+      newIndex = prev.length;
+      return [...prev, newView];
+    });
+    return newIndex;
+  }
 
   function addStep(step: ActivityStep) {
     setActivitySteps((prev) => [...prev, step]);
     setVisibleSteps((prev) => prev + 1);
   }
 
-  // Build file views from chunk analysis findings
-  function buildFileViewFromFinding(finding: { file: string; risk: number; description: string }, sourceChunk?: string) {
-    const lines: CodeLine[] = [];
-    if (sourceChunk) {
-      const fileMarker = `--- FILE: ${finding.file} ---`;
-      const startIdx = sourceChunk.indexOf(fileMarker);
-      if (startIdx !== -1) {
-        const afterMarker = sourceChunk.slice(startIdx + fileMarker.length);
-        const endIdx = afterMarker.indexOf("\n--- FILE:");
-        const fileContent = endIdx !== -1 ? afterMarker.slice(0, endIdx) : afterMarker;
-        const codeLines = fileContent.split("\n").slice(0, 30);
-        codeLines.forEach((text, i) => {
-          lines.push({ num: i + 1, text });
-        });
-      }
-    }
-
-    if (lines.length === 0) {
-      lines.push({ num: 1, text: `// File: ${finding.file}` });
-      lines.push({ num: 2, text: `// Risk: ${finding.risk}/10` });
-      lines.push({ num: 3, text: `// Finding: ${finding.description}` });
-    }
-
+  // Build file view from finding — fetches real source from unpkg
+  function loadFindingFileView(finding: { file: string; risk: number; description: string; lineNumbers?: number[] }) {
     const tags = [finding.risk >= 7 ? "MALICIOUS" : finding.risk >= 4 ? "SUSPICIOUS" : "SAFE"];
-
-    return {
-      name: finding.file.split("/").pop() ?? finding.file,
-      path: finding.file,
-      tags,
-      lines,
-      findings: [finding.description],
-      summary: finding.description,
-    };
+    const lineNums = finding.lineNumbers ?? [];
+    ensureFileView(finding.file, [finding.description], tags, finding.description, lineNums);
   }
 
   // Start the real audit
   useEffect(() => {
-    if (!router.isReady || isAuditing) return;
+    if (!router.isReady) return;
     if (pkgName === "unknown-package") return;
+    // Synchronous ref guard — prevents StrictMode double-fire
+    if (auditStarted.current) return;
+    auditStarted.current = true;
 
     setIsAuditing(true);
     setActivitySteps([]);
@@ -572,6 +690,10 @@ export default function Check() {
     setFiles([]);
     setFileViews([]);
     chunkResults.current = [];
+    findingsMap.current = {};
+    fileSummaryMap.current = {};
+    setTotalPackageFiles(0);
+    setAuditPhase(0);
 
     const controller = new AbortController();
 
@@ -609,12 +731,26 @@ export default function Check() {
               const event = JSON.parse(line.slice(6));
 
               switch (event.type) {
-                case "phase":
+                case "phase": {
                   addStep({ type: "phase", label: event.label });
+                  // Track audit phases for progress bar
+                  const lbl = event.label;
+                  if (lbl.includes("Resolving")) setAuditPhase(1);
+                  else if (lbl.includes("Scanning")) setAuditPhase(2);
+                  else if (lbl.includes("Skill Router")) setAuditPhase(3);
+                  else if (lbl.includes("Analyzing")) setAuditPhase(4);
+                  else if (lbl.includes("Verifier")) setAuditPhase(6);
+                  else if (lbl.includes("tie-breaker")) setAuditPhase(7);
                   break;
+                }
 
                 case "info":
                   addStep({ type: "info", label: event.label });
+                  // Extract total file count from the "Found X files, fetched Y" info message
+                  {
+                    const totalMatch = event.label.match(/Found\s+(\d+)\s+files/);
+                    if (totalMatch) setTotalPackageFiles(parseInt(totalMatch[1], 10));
+                  }
                   break;
 
                 case "filelist":
@@ -631,6 +767,16 @@ export default function Check() {
 
                 case "flag":
                   addStep({ type: "flag", label: event.label ?? "flagged", flag: event.flag });
+                  // Store finding in per-file map for later lookup
+                  {
+                    const filePath = event.flag.file.startsWith("/") ? event.flag.file : "/" + event.flag.file;
+                    if (!findingsMap.current[filePath]) findingsMap.current[filePath] = [];
+                    findingsMap.current[filePath].push({
+                      description: event.flag.description,
+                      risk: event.flag.risk,
+                      lineNumbers: event.flag.lineNumbers ?? [],
+                    });
+                  }
                   setFiles((prev) =>
                     prev.map((f) =>
                       f.path === event.flag.file || f.path === `/${event.flag.file}`
@@ -644,13 +790,40 @@ export default function Check() {
                   const result = event as ChunkResult;
                   chunkResults.current.push(result);
 
+                  // Get the list of files in this chunk
+                  const chunkFiles: string[] = (event.chunkFiles ?? []) as string[];
+
+                  // Store the chunk summary for ALL files in this chunk
+                  if (result.summary && chunkFiles.length > 0) {
+                    for (const fp of chunkFiles) {
+                      fileSummaryMap.current[fp] = result.summary;
+                    }
+                  }
+
+                  // Mark ALL files in this chunk as scanned (risk=0 if not flagged)
+                  // This makes the file count update in real-time
+                  if (chunkFiles.length > 0) {
+                    const flaggedInChunk = new Set(
+                      (result.findings ?? []).map((f: any) =>
+                        (typeof f.file === "string" && f.file.startsWith("/")) ? f.file : "/" + (f.file ?? "")
+                      )
+                    );
+                    setFiles((prev) =>
+                      prev.map((f) => {
+                        // Only update files that are in this chunk and haven't been flagged yet
+                        if (chunkFiles.includes(f.path) && f.risk === null && !flaggedInChunk.has(f.path)) {
+                          return { ...f, risk: 0 };
+                        }
+                        return f;
+                      })
+                    );
+                  }
+
+                  // Fetch actual source for each finding
                   if (result.findings && result.findings.length > 0) {
-                    const newViews = result.findings.map((f: any) => buildFileViewFromFinding(f));
-                    setFileViews((prev) => {
-                      const existing = new Set(prev.map((v) => v.path));
-                      const unique = newViews.filter((v: FileView) => !existing.has(v.path));
-                      return [...prev, ...unique];
-                    });
+                    for (const f of result.findings) {
+                      loadFindingFileView(f);
+                    }
                   }
 
                   addStep({
@@ -662,6 +835,8 @@ export default function Check() {
 
                 case "triage":
                   addStep({ type: "triage", label: event.label });
+                  if (event.label.includes("Agent 1")) setAuditPhase(5);
+                  else if (event.label.includes("Verifier")) setAuditPhase(7);
                   break;
 
                 case "agent1_verdict":
@@ -718,8 +893,23 @@ export default function Check() {
                   });
                   break;
 
+                case "skill_selection":
+                  addStep({
+                    type: "skill_selection",
+                    label: "Skill selection",
+                    selected: event.selected,
+                    usedFallback: event.usedFallback,
+                    reason: event.reason,
+                  });
+                  break;
+
                 case "done":
                   addStep({ type: "done", label: event.label });
+                  setAuditPhase(8);
+                  // Mark all unflagged files as safe (risk=0)
+                  setFiles((prev) =>
+                    prev.map((f) => (f.risk === null ? { ...f, risk: 0 } : f))
+                  );
                   break;
 
                 case "error":
@@ -742,20 +932,72 @@ export default function Check() {
 
     runAudit();
 
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      auditStarted.current = false; // Allow restart on StrictMode remount
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router.isReady, pkgName]);
 
-  const totalSteps = activitySteps.length || 1;
-  const progress = isAuditing
-    ? Math.min(90, Math.round((visibleSteps / Math.max(totalSteps, 8)) * 100))
-    : finalVerdict
-      ? 100
+  // Progress is based on audit pipeline phases, not step count
+  const progress = finalVerdict
+    ? 100
+    : isAuditing
+      ? Math.min(95, Math.round((auditPhase / totalAuditPhases) * 100))
       : 0;
 
-  function handleFileClick(path: string) {
-    const idx = fileViews.findIndex((fv) => fv.path === path);
-    if (idx !== -1) setActiveFileIndex(idx);
+  // Files scanned = files in the right panel that have been processed by agents
+  const filesScannedCount = files.filter((f) => f.risk !== null).length;
+
+  async function handleFileClick(filePath: string) {
+    // If file already loaded, just switch to it
+    const idx = fileViews.findIndex((fv) => fv.path === filePath);
+    if (idx !== -1) {
+      setActiveFileIndex(idx);
+      return;
+    }
+
+    // Look up real data from findingsMap and files state
+    const fileFindings = findingsMap.current[filePath] ?? [];
+    const fileEntry = files.find((f) => f.path === filePath);
+    const risk = fileEntry?.risk ?? 0;
+
+    // Determine real tag from risk
+    let tags: string[];
+    if (fileFindings.length > 0) {
+      const maxRisk = Math.max(...fileFindings.map((f) => f.risk));
+      tags = [maxRisk >= 7 ? "MALICIOUS" : maxRisk >= 4 ? "SUSPICIOUS" : "LOW"];
+    } else if (risk === 0) {
+      tags = ["SAFE"];
+    } else {
+      tags = [risk >= 7 ? "MALICIOUS" : risk >= 4 ? "SUSPICIOUS" : "LOW"];
+    }
+
+    const descriptions = fileFindings.map((f) => f.description);
+    const allLineNumbers = fileFindings.flatMap((f) => f.lineNumbers);
+
+    // Build a real summary: use per-file summary from chunk results, fall back to findings, then to safe message
+    const chunkSummary = fileSummaryMap.current[filePath] ?? "";
+    let summary: string;
+    if (descriptions.length > 0) {
+      summary = descriptions.join("\n\n");
+      if (chunkSummary) summary = chunkSummary + "\n\n" + summary;
+    } else if (chunkSummary) {
+      summary = chunkSummary;
+    } else {
+      // Try to find the chunk summary that covers this file
+      const matchingChunk = chunkResults.current.find((cr) => cr.summary);
+      summary = matchingChunk?.summary ?? "No security findings for this file.";
+    }
+
+    // Fetch source from unpkg and create a new file view with real data
+    setIsLoadingFile(true);
+    try {
+      const newIdx = await ensureFileView(filePath, descriptions, tags, summary, allLineNumbers);
+      setActiveFileIndex(newIdx);
+    } finally {
+      setIsLoadingFile(false);
+    }
   }
 
   return (
@@ -777,8 +1019,8 @@ export default function Check() {
       <div className="flex h-screen flex-col bg-[#f0ebe4] text-[#1a1a1a]">
         <Header
           packageName={`${pkgName}@${pkgVersion}`}
-          filesScanned={fileViews.length}
-          filesTotal={files.length}
+          filesScanned={filesScannedCount}
+          filesTotal={totalPackageFiles || files.length}
           progress={progress}
         />
 
@@ -798,6 +1040,7 @@ export default function Check() {
               allFileViews={fileViews}
               activeIndex={activeFileIndex}
               onTabClick={setActiveFileIndex}
+              isLoading={isLoadingFile}
             />
           </main>
 
