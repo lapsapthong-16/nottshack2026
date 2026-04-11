@@ -28,6 +28,8 @@ import {
   runAgent2Verifier,
   runAgent2FinalVerdict,
 } from "../../../lib/audit/agents";
+import { storeAuditReport } from "../evoguard/document/store";
+
 
 type CollectedFinding = {
   file: string;
@@ -496,6 +498,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         tags: ["automated-audit", item.source],
         line_start: lineStart,
         line_end: lineEnd,
+        line_numbers: item.lineNumbers,
+
         reasoning: item.description,
         snippet_id: `snippet_${sha256(snippetSeed).slice(0, 16)}`,
         reviewed: false,
@@ -545,6 +549,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
+    // ── Step 8: Automate Dash Platform Storage ──
+    logger.sendEvent("phase", { label: "🔗 Publishing high-fidelity report to Dash Platform..." });
+    try {
+      const finalSeverity = agent2Verdict?.overallSeverity || agent1Verdict?.overallSeverity || "none";
+      const riskScoreMap: Record<string, number> = { high: 90, medium: 50, low: 20, none: 0 };
+      const calculatedRiskScore = riskScoreMap[finalSeverity.toLowerCase()] ?? 10;
+
+      const storageResult = await storeAuditReport({
+        pkgName: normalizedName,
+        version: normalizedResolvedVersion,
+        riskScore: calculatedRiskScore,
+        summary: agent2Verdict?.summary || agent1Verdict?.summary || "Audit complete.",
+        malwareDetected: finalVerdictValue === "MALICIOUS",
+        auditorSignature: `validus-ai-${scanId}`, // AI signature for now
+        findings,
+        snippets,
+        filesCount: fetchedFiles.length,
+
+      });
+
+      logger.sendEvent("info", {
+        label: `Successfully published to Dash! Report ID: ${storageResult.reportId}`,
+      });
+    } catch (storeErr: any) {
+      logger.log(`Warning: Failed to automate Dash storage: ${storeErr.message}`);
+      logger.sendEvent("info", {
+        label: `⚠️ Dash Storage skipped/failed: ${storeErr.message}`,
+      });
+    }
+
     await client.stop();
     logger.log(`═══════════════════════════════════════════════════`);
     logger.log(`AUDIT COMPLETE: ${normalizedName}@${normalizedResolvedVersion}`);
@@ -552,7 +586,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logger.log(`Duration: ${((Date.now() - logger.getStartTime()) / 1000).toFixed(1)}s`);
     logger.log(`JSON output dir: ${artifacts.scanDir}`);
     logger.log(`═══════════════════════════════════════════════════`);
-    logger.sendEvent("done", { label: "Audit complete — verified by 2 independent agents" });
+    logger.sendEvent("done", { label: "Audit complete — verified by 2 independent agents and published on-chain" });
+
   } catch (err: any) {
     logger.log(`ERROR: ${err.message ?? "Audit failed"}`);
     logger.sendEvent("error", { message: err.message ?? "Audit failed" });

@@ -25,7 +25,9 @@ export default async function handler(
   }
 
   try {
-    const contract = await deployEvoguardContract();
+    const isForce = req.body?.force === true || req.query?.force === "true";
+    const contract = await deployEvoguardContract(isForce);
+
 
     return res.status(200).json({ ok: true, contract });
   } catch (error: any) {
