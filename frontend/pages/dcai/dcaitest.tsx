@@ -153,6 +153,69 @@ export default function DcaiTest() {
     }
   };
 
+  // 4) Faucet
+  const requestFaucet = async () => {
+    if (!wallet) return log("Connect wallet first");
+    setLoading("faucet");
+    try {
+      log(`Requesting tokens for ${wallet}...`);
+      
+      const response = await fetch(`/api/dcai/faucet?action=request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: wallet }),
+      });
+
+      const res = await response.json();
+      log(`Faucet response: ${JSON.stringify(res)}`);
+
+      if (res.success) {
+        log("Tokens requested successfully!");
+      } else {
+        log(`Faucet error: ${res.error || "Unknown error"}`);
+      }
+    } catch (err: any) {
+      log(`Faucet request error: ${err.message}`);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const checkFaucetStatus = async () => {
+    setLoading("faucet_status");
+    try {
+      log("Checking faucet status...");
+      const response = await fetch("/api/dcai/faucet?action=status");
+      const res = await response.json();
+      log(`Faucet status: ${JSON.stringify(res)}`);
+    } catch (err: any) {
+      log(`Status error: ${err.message}`);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const checkBlockNumber = async () => {
+    setLoading("block");
+    try {
+      log("Getting current block number...");
+      const response = await fetch("/api/dcai/faucet?action=block");
+      const res = await response.json();
+      if (res.result) {
+        log(`Current block number (hex): ${res.result}`);
+        log(`Current block number (dec): ${parseInt(res.result, 16)}`);
+      } else if (res.error) {
+        log(`RPC Error: ${JSON.stringify(res.error)}`);
+      } else {
+        log(`Response: ${JSON.stringify(res)}`);
+      }
+    } catch (err: any) {
+      log(`RPC error: ${err.message}`);
+    } finally {
+      setLoading(null);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 600, margin: "40px auto", fontFamily: "monospace", padding: 20 }}>
       <h1 style={{ fontSize: 24, marginBottom: 8 }}>DCAI L3 Test Page</h1>
@@ -183,6 +246,30 @@ export default function DcaiTest() {
           style={btnStyle("#8b5cf6")}
         >
           {loading === "contracts" ? "Reading..." : "Test Contracts"}
+        </button>
+
+        <button
+          onClick={requestFaucet}
+          disabled={loading === "faucet" || !wallet}
+          style={btnStyle("#ec4899")}
+        >
+          {loading === "faucet" ? "Requesting..." : "Request Faucet"}
+        </button>
+
+        <button
+          onClick={checkFaucetStatus}
+          disabled={loading === "faucet_status"}
+          style={btnStyle("#6366f1")}
+        >
+          {loading === "faucet_status" ? "Checking..." : "Faucet Status"}
+        </button>
+
+        <button
+          onClick={checkBlockNumber}
+          disabled={loading === "block"}
+          style={btnStyle("#14b8a6")}
+        >
+          {loading === "block" ? "Getting..." : "Block #"}
         </button>
       </div>
 
