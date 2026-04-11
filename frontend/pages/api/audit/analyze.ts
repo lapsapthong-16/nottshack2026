@@ -171,7 +171,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logger.sendEvent("phase", { label: "🧭 Skill Router: Selecting relevant security guides..." });
 
     const { CopilotClient, approveAll } = await import("@github/copilot-sdk");
-    const client = new CopilotClient();
+    const client = new CopilotClient({
+      githubToken: (req.headers["x-github-token"] as string) || process.env.GITHUB_TOKEN || process.env.COPILOT_API_KEY,
+    });
 
     // Build manifest of all available skill files
     const { skillDir, manifest } = buildSkillManifest();
