@@ -1,4 +1,4 @@
-![Validus](Validus-Main.jpg)
+![Validus](Validus-Logo.jpeg)
 
 # Validus — AI-Powered Security Audit Platform
 
