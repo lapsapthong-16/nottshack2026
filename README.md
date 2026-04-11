@@ -104,15 +104,11 @@ Populate `.env` with your secure credentials:
 
 ```ini
 NETWORK=testnet
-DASH_IDENTITY_ID=your_platform_identity_id
-
-# Provide EITHER Hex OR WIF format - do NOT commit these to source control.
-EVOGUARD_PRIVATE_KEY_WIF=
-EVOGUARD_PRIVATE_KEY_HEX=
-
-# Contract references
-EVOGUARD_CONTRACT_ID=
-EVOGUARD_DPNS_LABEL=evoguard
+DASH_IDENTITY_ID=
+DASH_PRIVATE_MASTER_AUTH=
+DASH_PRIVATE_CRITICAL_AUTH=
+DASH_PRIVATE_HIGH_AUTH=
+DASH_PRIVATE_CRITICAL_TRANS=
 ```
 
 > **Security Note:** `PLATFORM_MNEMONIC` is optional, required only for legacy utilities within the ecosystem, but strictly bypassed in the refined Validus flow for enhanced security.

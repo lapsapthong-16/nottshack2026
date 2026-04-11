@@ -245,141 +245,134 @@ export default function Landing() {
             Results published on-chain.
           </p>
 
-          {/* Search bar */}
+          {/* Search bar container */}
           {!mounted ? (
-            <div className="mt-10 h-[52px]" /> // Placeholder for hydration consistency
+            <div className="mt-10 h-[52px]" />
           ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleAudit();
-              }}
-              className="relative mt-10 flex items-center gap-0 rounded-xl border border-[#d6d0c8] bg-white shadow-sm"
-            >
-              {/* Package name input with autocomplete */}
-              <div ref={searchRef} className="relative">
-                <input
-                  id="package-search"
-                  type="text"
-                  placeholder="package name"
-                  autoComplete="off"
-                  value={packageName}
-                  onChange={(e) => handlePackageInput(e.target.value)}
-                  onFocus={() => {
-                    if (searchResults.length > 0) setShowDropdown(true);
-                  }}
-                  className="w-44 rounded-l-xl border-none bg-transparent px-5 py-3.5 text-sm text-[#1a1a1a] placeholder-[#a8a8a8] outline-none sm:w-56"
-                />
+            <div className="mt-10 flex w-full max-w-2xl flex-col items-center gap-4">
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleAudit();
+                }}
+                className="group relative flex w-full items-center rounded-xl border border-[#d6d0c8] bg-white shadow-sm transition-all focus-within:border-[#8b6fad]/50 focus-within:shadow-md"
+              >
+                {/* Fixed prefix with dynamic highlight */}
+                <div className={`flex items-center rounded-l-xl border-r border-[#d6d0c8] px-4 py-3.5 font-mono text-sm transition-colors duration-300 ${packageName ? 'bg-[#8b6fad]/10 text-[#8b6fad]' : 'bg-[#f5f0ea] text-[#a8a8a8]'}`}>
+                  npm install
+                </div>
 
-                {/* Package search dropdown */}
-                {showDropdown && (
-                  <div className="absolute left-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-lg border border-[#d6d0c8] bg-white shadow-lg">
-                    {isSearching ? (
-                      <div className="px-4 py-3 text-xs text-[#a8a8a8]">
-                        Searching npm...
-                      </div>
-                    ) : (
-                      searchResults.map((pkg, i) => (
-                        <button
-                          key={pkg.name}
-                          type="button"
-                          onClick={() => selectPackage(pkg)}
-                          className="flex w-full cursor-pointer flex-col gap-0.5 border-none bg-transparent px-4 py-2.5 text-left transition hover:bg-[#f5f0ea]"
-                          style={
-                            i < searchResults.length - 1
-                              ? { borderBottom: "1px solid #eee" }
-                              : {}
-                          }
-                        >
-                          <span className="text-sm font-medium text-[#1a1a1a]">
-                            {pkg.name}
-                            <span className="ml-2 text-xs font-normal text-[#a8a8a8]">
-                              v{pkg.version}
+                {/* Package name input with autocomplete */}
+                <div ref={searchRef} className="relative flex-1">
+                  <input
+                    id="package-search"
+                    type="text"
+                    placeholder="package name"
+                    autoComplete="off"
+                    value={packageName}
+                    onChange={(e) => handlePackageInput(e.target.value)}
+                    onFocus={() => {
+                      if (searchResults.length > 0) setShowDropdown(true);
+                    }}
+                    className="w-full border-none bg-transparent px-5 py-3.5 font-mono text-sm text-[#1a1a1a] placeholder-[#a8a8a8] outline-none"
+                  />
+
+                  {/* Package search dropdown */}
+                  {showDropdown && (
+                    <div className="absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-lg border border-[#d6d0c8] bg-white shadow-lg">
+                      {isSearching ? (
+                        <div className="px-4 py-3 text-xs text-[#a8a8a8]">
+                          Searching npm...
+                        </div>
+                      ) : (
+                        searchResults.map((pkg, i) => (
+                          <button
+                            key={pkg.name}
+                            type="button"
+                            onClick={() => selectPackage(pkg)}
+                            className="flex w-full cursor-pointer flex-col gap-0.5 border-none bg-transparent px-4 py-2.5 text-left transition hover:bg-[#f5f0ea]"
+                            style={
+                              i < searchResults.length - 1
+                                ? { borderBottom: "1px solid #eee" }
+                                : {}
+                            }
+                          >
+                            <span className="text-sm font-medium text-[#1a1a1a]">
+                              {pkg.name}
+                              <span className="ml-2 text-xs font-normal text-[#a8a8a8]">
+                                v{pkg.version}
+                              </span>
                             </span>
-                          </span>
-                          <span className="truncate text-xs text-[#888]">
-                            {pkg.description || "(no description)"}
-                          </span>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
+                            <span className="truncate text-xs text-[#888]">
+                              {pkg.description || "(no description)"}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
 
-              <div className="h-6 w-px bg-[#d6d0c8]" />
+                <div className="h-6 w-px bg-[#d6d0c8]" />
 
-              {/* Version selector dropdown */}
-              <div ref={versionRef} className="relative">
-                <button
-                  type="button"
-                  onClick={() => setShowVersionDropdown((v) => !v)}
-                  disabled={isLoadingVersions}
-                  className="flex w-24 cursor-pointer items-center justify-between border-none bg-transparent px-4 py-3.5 text-sm text-[#1a1a1a] outline-none sm:w-28"
-                >
-                  <span className={version === "latest" ? "text-[#a8a8a8]" : ""}>
-                    {isLoadingVersions ? "..." : version}
-                  </span>
-                  <svg
-                    width="10"
-                    height="6"
-                    viewBox="0 0 10 6"
-                    fill="none"
-                    className="ml-1 flex-shrink-0"
+                {/* Version selector dropdown */}
+                <div ref={versionRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowVersionDropdown((v) => !v)}
+                    disabled={isLoadingVersions}
+                    className="flex w-24 cursor-pointer items-center justify-between border-none bg-transparent px-4 py-3.5 text-sm text-[#1a1a1a] outline-none sm:w-28"
                   >
-                    <path
-                      d="M1 1L5 5L9 1"
-                      stroke="#a8a8a8"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
+                    <span className={version === "latest" ? "text-[#a8a8a8]" : ""}>
+                      {isLoadingVersions ? "..." : version}
+                    </span>
+                    <svg
+                      width="10"
+                      height="6"
+                      viewBox="0 0 10 6"
+                      fill="none"
+                      className="ml-1 flex-shrink-0"
+                    >
+                      <path
+                        d="M1 1L5 5L9 1"
+                        stroke="#a8a8a8"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+
+                  {showVersionDropdown && versions.length > 0 && (
+                    <div className="absolute left-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-[#d6d0c8] bg-white shadow-lg">
+                      {versions.map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => selectVersion(v)}
+                          className={`flex w-full cursor-pointer items-center border-none bg-transparent px-4 py-2.5 text-left text-sm transition hover:bg-[#f5f0ea] ${
+                            v === version || (v.startsWith("latest") && version === "latest")
+                              ? "font-medium text-[#8b6fad]"
+                              : "text-[#1a1a1a]"
+                          }`}
+                        >
+                          {v}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isProcessingPayment}
+                  className="ml-1 mr-1.5 cursor-pointer rounded-lg bg-[#b8a9c8] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#a494b4] disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isProcessingPayment ? "Awaiting Payment..." : "Audit"}
                 </button>
-
-                {showVersionDropdown && versions.length > 0 && (
-                  <div className="absolute left-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-[#d6d0c8] bg-white shadow-lg">
-                    {versions.map((v) => (
-                      <button
-                        key={v}
-                        type="button"
-                        onClick={() => selectVersion(v)}
-                        className={`flex w-full cursor-pointer items-center border-none bg-transparent px-4 py-2.5 text-left text-sm transition hover:bg-[#f5f0ea] ${
-                          v === version || (v.startsWith("latest") && version === "latest")
-                            ? "font-medium text-[#8b6fad]"
-                            : "text-[#1a1a1a]"
-                        }`}
-                      >
-                        {v}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <button
-                type="submit"
-                disabled={isProcessingPayment}
-                className="ml-1 mr-1.5 cursor-pointer rounded-lg bg-[#b8a9c8] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#a494b4] disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isProcessingPayment ? "Awaiting Payment..." : "Audit"}
-              </button>
-            </form>
+              </form>
+            </div>
           )}
-
-          {/* Example packages */}
-          <div className="mt-6 flex items-center gap-4">
-            {examples.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() => handleExampleClick(name)}
-                className="cursor-pointer border-none bg-transparent font-mono text-xs tracking-wide text-[#a8a09a] transition hover:text-[#6b6b6b]"
-              >
-                {name}
-              </button>
-            ))}
-          </div>
         </main>
       </div>
     </>
