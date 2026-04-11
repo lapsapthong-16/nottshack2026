@@ -34,6 +34,21 @@ export default async function handler(
     });
 
     if (!addressKeyManager) {
+      // Fallback: If no mnemonic is provided, just return the identity ID from ENV
+      if (process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID) {
+        return res.status(200).json({
+          ok: true,
+          wallet: {
+            network: process.env.NETWORK || "testnet",
+            address: "",
+            derivationPath: "",
+            balance: 0,
+            nonce: 0,
+            fundingUrl: "",
+            identityId: process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID || null,
+          },
+        });
+      }
       throw new Error(
         "No wallet mnemonic configured. Set PLATFORM_MNEMONIC in frontend/.env.",
       );
@@ -51,13 +66,30 @@ export default async function handler(
         balance: info?.balance ?? 0,
         nonce: info?.nonce ?? 0,
         fundingUrl: `https://bridge.thepasta.org/?address=${address.bech32m}`,
-        identityId: keyManager?.identityId ?? null,
+        identityId: keyManager?.identityId || process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID || null,
       },
     });
   } catch (error) {
+    // Ultimate fallback if setupDashClient crashes entirely (e.g. missing connection)
+    if (process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID) {
+      return res.status(200).json({
+        ok: true,
+        wallet: {
+          network: process.env.NETWORK || "testnet",
+          address: "",
+          derivationPath: "",
+          balance: 0,
+          nonce: 0,
+          fundingUrl: "",
+          identityId: process.env.RECIPIENT_IDENTITY_ID || process.env.DASH_IDENTITY_ID || null,
+        },
+      });
+    }
+
     const message =
       error instanceof Error ? error.message : "Failed to load wallet info";
 
     return res.status(500).json({ ok: false, error: message });
   }
 }
+

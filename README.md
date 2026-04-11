@@ -1,48 +1,179 @@
-<p align="center">
-  <img src="https://img.shields.io/badge/Dash-008DE4?style=for-the-badge&logo=dash&logoColor=white" alt="Dash">
-  <img src="https://img.shields.io/badge/Blockchain_for_Good-00C853?style=for-the-badge" alt="BGA">
-  <img src="https://img.shields.io/badge/DCAI_Ecosystem-8A2BE2?style=for-the-badge" alt="DCAI">
-</p>
+# EvoGuard
 
-<h1 align="center">🛡️ TrustLink</h1>
-<p align="center">
-  <strong>Decentralized Trust & Escrow for the Gig Economy.</strong><br>
-  <em>Built for NottsHack 2026</em>
-</p>
+EvoGuard is a Dash Platform prototype for publishing and retrieving package audit metadata on testnet.
 
----
+The current repo is focused on phases 1 and 2:
 
-## 💡 The Inspiration
-The global freelance economy is booming, encompassing over **1.5 billion people**. Yet, the infrastructure supporting it is broken. According to industry reports, over **70% of freelancers** face payment delays exceeding 60 days, and billions are lost annually to wage theft and non-payment. 
+- validate a pre-existing Dash Platform identity
+- inspect whether a supplied private key can sign for that identity
+- define and publish an `auditReport` data contract
+- fetch the deployed contract back from Dash Platform
 
-**The Catch-22:** Clients don't trust unverified freelancers. However, freelancers cannot prove their historical income stability without exposing sensitive, private financial data to strangers. **TrustLink** solves this by replacing human trust with cryptographic truth.
+The current implementation does **not** require a mnemonic for the EvoGuard flow. It is built around:
 
-## ⚙️ Core Architecture & Features
+- `DASH_IDENTITY_ID`
+- `EVOGUARD_PRIVATE_KEY_WIF` or `EVOGUARD_PRIVATE_KEY_HEX`
 
-### 1. Zero-Knowledge Income Proofs (TEE)
-Freelancers need to prove they are established professionals. TrustLink utilizes a **Trusted Execution Environment (TEE)** to securely analyze a freelancer's wallet transaction history. 
-* **The Result:** It generates an on-chain "Consistent Earner" attestation badge. 
-* **The Privacy:** The client sees the verifiable badge, but the freelancer's actual wallet balance and transaction amounts remain 100% hidden.
+## Repo Layout
 
-### 2. Trustless Peer-to-Peer Escrow (Dash Network)
-Traditional platforms like Upwork take up to 20% in fees just to hold money in escrow. We built a decentralized alternative:
-* **Lock:** Client funds are locked immediately using **Dash InstantSend**, eliminating any risk of double-spending.
-* **Hold:** The funds are held by a decentralized **Masternode Quorum (LLMQ)**, meaning no single entity controls the money.
-* **Release:** Once a TEE Job Attestation confirms the service was rendered, funds are auto-released, and **ZMQ** notifications instantly alert both parties.
+```text
+.
+├── frontend/              Next.js app and EvoGuard UI/API routes
+├── backend/               Misc backend notes/assets
+├── IMPLEMENTATION.md      Working implementation plan / notes
+└── README.md
+```
 
-### 3. Autonomous Risk Scoring (DCAI L3)
-To assess ongoing reliability, TrustLink integrates an AI assistant deployed via the **DCAI ecosystem**. 
-* The AI analyzes job completion speeds and dispute rates, logging an immutable reputation score directly to the **Base L3 network**.
+## Current Features
 
-## 🏆 Hackathon Track Alignment
+### Identity validation
 
-* 🔵 **DASH:** TrustLink natively utilizes Dash's InstantSend for immediate payment locking and relies on Long-Living Masternode Quorums (LLMQ) for trustless escrow holding. HD wallets are used to ensure smooth Web2-like onboarding.
-* 🟢 **Blockchain for Good Alliance (BGA):** Aligned with **SDG 8** (Decent Work) and **SDG 10** (Reduced Inequalities). TrustLink serves as public digital infrastructure that prevents wage fraud and provides financial security to unbanked gig workers in the Global South.
-* 🟣 **DCAI:** Integrates an AI scoring agent that interacts with the DCAI L3 on Base to log dispute resolutions and compute decentralized reputation scores.
+The app can:
 
-## 📚 References & Official Documentation
+- fetch a Dash Platform identity by ID
+- read its balance on testnet
+- test whether the configured private key matches any on-chain identity key
+- report whether that matched key can register names or deploy contracts
 
-* [Dash InstantSend & LLMQ Official Documentation](https://docs.dash.org/en/stable/docs/core/guide/dash-features-instantsend.html)
-* [Blockchain for Good Alliance (BGA) Mission](https://chainforgood.org/)
-* [The Global Freelance Payment Delay Report 2026 (Jobbers)](https://www.jobbers.io/the-global-freelance-client-payment-delay-report-2025-why-63-of-freelancers-wait-over-30-days-to-get-paid/)
-* [Reversing Late Payment Culture (Remote.com 2025 Report)](https://remote.com/blog/contractor-management/reversing-late-payment-culture)
+### Contract flow
+
+The app includes:
+
+- a local EvoGuard `auditReport` contract schema
+- a deploy route backed by the Dash Evo SDK
+- a fetch route to retrieve a deployed contract by ID
+- a frontend admin page that shows identity, key capability, DPNS status, and contract state
+
+### UI surfaces
+
+- `/` renders the Validus landing page
+- `/test` renders the EvoGuard admin page
+- `/report` renders the public audit reports page
+
+### API routes
+
+- `GET /api/evoguard/status`
+- `GET /api/evoguard/contract`
+- `POST /api/evoguard/contract/deploy`
+- `POST /api/evoguard/dpns/register`
+
+## Tech Stack
+
+- Next.js 16
+- React 19
+- TypeScript
+- Tailwind CSS 4
+- `@dashevo/evo-sdk`
+
+## Getting Started
+
+### 1. Install dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+### 2. Configure env
+
+Create `frontend/.env` using `frontend/.env.example`.
+
+Minimum required config for the EvoGuard flow:
+
+```bash
+NETWORK=testnet
+DASH_IDENTITY_ID=your_identity_id
+EVOGUARD_PRIVATE_KEY_WIF=
+EVOGUARD_PRIVATE_KEY_HEX=
+EVOGUARD_CONTRACT_ID=
+EVOGUARD_DPNS_LABEL=evoguard
+```
+
+Notes:
+
+- Use either `EVOGUARD_PRIVATE_KEY_WIF` or `EVOGUARD_PRIVATE_KEY_HEX`.
+- The key must belong to an on-chain public key on the configured identity.
+- Contract deployment will only work if that identity key is contract-capable.
+- `PLATFORM_MNEMONIC` is only relevant to older wallet utilities in the frontend and is not required for the EvoGuard path.
+
+### 3. Run the app
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open:
+
+- `http://localhost:3000`
+
+## How to Verify
+
+### Identity status
+
+Open:
+
+- `http://localhost:3000/api/evoguard/status`
+
+Successful identity resolution looks like:
+
+- `exists: true`
+- non-null `balance`
+
+Successful signing capability looks like:
+
+- `keyMatchesIdentity: true`
+- non-null `matchedKeyId`
+- `canDeployContracts: true` for contract publishing
+
+If the response says `Invalid private key`, the supplied secret is not parseable as a single WIF or 64-char hex private key.
+
+### Contract status
+
+Open:
+
+- `http://localhost:3000/api/evoguard/contract`
+
+After a successful deployment, the route should return:
+
+- `exists: true`
+- a `fetchedId`
+- `documentTypes` containing `auditReport`
+
+## Important Constraint
+
+This repo can publish a data contract **without a mnemonic**, but only if you provide:
+
+1. the correct Dash Platform identity ID
+2. the correct private key for a public key on that identity
+3. a key with permissions sufficient for contract signing
+
+If your key does not match the identity, the app will still fetch the identity and balance, but deployment will remain blocked.
+
+## Build and Checks
+
+From `frontend/`:
+
+```bash
+npm run lint
+npx next build --webpack
+```
+
+`next build` with Turbopack may fail in restricted environments due to sandbox/process limits, so webpack is the more reliable verification command here.
+
+## Status
+
+Implemented:
+
+- identity lookup
+- private key matching
+- DPNS status lookup
+- contract deploy/fetch API routes
+- EvoGuard admin frontend
+
+Not yet implemented:
+
+- package scanning
+- document publishing for audit reports
+- CLI package lookup
+- payment-triggered audits
