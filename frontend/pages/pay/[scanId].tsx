@@ -3,6 +3,14 @@ import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
 import Header from "@/components/Header";
+import { ethers } from "ethers";
+
+const STAKING_CONTRACT = "0x47423b0286099CFF00B6Bc2830674CED8caf2BFf";
+const STAKING_ABI = ["function topUp() payable"];
+
+function getInjected(): any {
+  return (window as any).okxwallet || (window as any).ethereum;
+}
 
 type BillingResponse = {
   billing: {
@@ -142,6 +150,65 @@ export default function PayScan() {
     }
   }
 
+  async function handleDcaiPayment() {
+    if (!data || isPaying) return;
+
+    try {
+      setIsPaying(true);
+      setError(null);
+      
+      const injected = getInjected();
+      if (!injected) {
+        throw new Error("OKX Wallet or Web3 provider not found. Please install a Web3 wallet.");
+      }
+
+      const accounts: string[] = await injected.request({ method: "eth_requestAccounts" });
+      const dcaiWallet = accounts[0];
+
+      if (!dcaiWallet) {
+        throw new Error("No wallet account selected.");
+      }
+
+      const topUpAmount = data.billing.final_amount_credits;
+
+      const iface = new ethers.Interface(STAKING_ABI);
+      const txParams: Record<string, string> = {
+        from: dcaiWallet,
+        to: STAKING_CONTRACT,
+        data: iface.encodeFunctionData("topUp"),
+        value: "0x" + ethers.parseEther(topUpAmount).toString(16),
+        gas: "0x40000", // Basic gas limit for topUp
+      };
+
+      const txHash: string = await injected.request({
+        method: "eth_sendTransaction",
+        params: [txParams],
+      });
+
+      // Confirm with backend using the txHash as transitionId
+      const confirmRes = await fetch("/api/audit/billing/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scanId: data.billing.scan_id,
+          payerIdentityId: dcaiWallet, // Using wallet address for verification
+          amountCredits: data.billing.final_amount_credits,
+          transitionId: txHash,
+        }),
+      });
+      const confirmData = await confirmRes.json();
+      if (!confirmRes.ok) {
+        throw new Error(confirmData.error || "Failed to confirm payment.");
+      }
+
+      void router.push(`/report/${encodeURIComponent(data.billing.scan_id)}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Payment failed");
+    } finally {
+      setIsPaying(false);
+    }
+  }
+
   return (
     <>
       <Head>
@@ -177,29 +244,49 @@ export default function PayScan() {
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
                   <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-4">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Final Amount</p>
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Option 1: Dash Platform</p>
                     <p className="mt-1 text-2xl font-bold">{data.finalAmountTDash} tDASH</p>
-                    <p className="mt-1 text-xs text-[#8a8580]">{data.billing.final_amount_credits} credits</p>
+                    <p className="mt-1 text-xs text-[#8a8580]">Network: Dash Evo Testnet</p>
                   </div>
                   <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-4">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Approved Ceiling</p>
-                    <p className="mt-1 text-2xl font-bold">{data.ceilingAmountTDash} tDASH</p>
-                    <p className="mt-1 text-xs text-[#8a8580]">Payment status: {data.billing.payment_status}</p>
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Option 2: OKX Wallet</p>
+                    <p className="mt-1 text-2xl font-bold">{data.billing.final_amount_credits} tDCAI</p>
+                    <p className="mt-1 text-xs text-[#8a8580]">Network: DCAI L3 Testnet</p>
                   </div>
                 </div>
 
                 <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-[#8a8580]">
-                    The extension will prompt only for the dynamic final amount.
+                    Select your preferred payment method above.
                   </p>
-                  <button
-                    type="button"
-                    onClick={handlePayment}
-                    disabled={isPaying || data.billing.payment_status === "paid"}
-                    className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {data.billing.payment_status === "paid" ? "Already Paid" : isPaying ? "Awaiting Extension..." : "Pay & Unlock"}
-                  </button>
+                  {data.billing.payment_status === "paid" ? (
+                    <button
+                      type="button"
+                      disabled
+                      className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white opacity-50"
+                    >
+                      Already Paid
+                    </button>
+                  ) : (
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={handlePayment}
+                        disabled={isPaying}
+                        className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isPaying ? "Processing..." : "Pay with Dash"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDcaiPayment}
+                        disabled={isPaying}
+                        className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {isPaying ? "Processing..." : "Pay with tDCAI"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}
