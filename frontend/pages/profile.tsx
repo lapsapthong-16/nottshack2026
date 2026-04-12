@@ -255,9 +255,21 @@ export default function ProfilePage() {
     finally { setLoading(null); }
   };
 
+  const autoFlush = async (addr: string) => {
+    try {
+      await fetch("/api/dcai/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+    } catch { /* silent */ }
+  };
+
   const sendTx = async (to: string, data: string, value: bigint) => {
     const injected = getInjected();
     if (!injected) throw new Error("No wallet");
+
+    await autoFlush(wallet!);
 
     const txParams: Record<string, string> = {
       from: wallet!,

@@ -82,6 +82,16 @@ export default function Header({
     } catch { /* silent */ }
   };
 
+  const autoFlush = async (addr: string) => {
+    try {
+      await fetch("/api/dcai/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+    } catch { /* silent */ }
+  };
+
   const handleTopUp = async () => {
     const amt = parseFloat(topUpAmount);
     if (isNaN(amt) || amt <= 0 || !dcaiWallet) return;
@@ -91,6 +101,7 @@ export default function Header({
       const injected = getInjected();
       if (!injected) throw new Error("No wallet");
 
+      await autoFlush(dcaiWallet);
       const iface = new ethers.Interface(STAKING_ABI);
       const txParams: Record<string, string> = {
         from: dcaiWallet,

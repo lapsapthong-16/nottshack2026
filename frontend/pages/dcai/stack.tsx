@@ -162,10 +162,23 @@ export default function StackPage() {
     } finally { setLoading(null); }
   };
 
+  // Auto-flush stuck txs before sending
+  const autoFlush = async (addr: string) => {
+    try {
+      await fetch("/api/dcai/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+    } catch { /* silent */ }
+  };
+
   // Send tx to a specific contract via wallet
   const sendTx = async (to: string, data: string, value: bigint) => {
     const injected = getInjected();
     if (!injected) throw new Error("No wallet");
+
+    await autoFlush(wallet!);
 
     // Fetch correct nonce from RPC to prevent stale nonce issues
     const provider = new ethers.JsonRpcProvider(DCAI_RPC_PROXY);
