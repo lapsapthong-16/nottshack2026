@@ -187,8 +187,9 @@ export default function StackPage() {
 
     setLastTxHash(txHash);
     notify(`Tx sent: ${txHash.slice(0, 10)}...`);
-    await new Promise(r => setTimeout(r, 3000));
-    return { receipt: null, txHash };
+    
+    const receipt = await provider.waitForTransaction(txHash);
+    return { receipt, txHash };
   };
 
   // Top Up
