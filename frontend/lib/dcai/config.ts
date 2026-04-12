@@ -1,0 +1,12 @@
+export const DCAI_CHAIN_ID = "0x4809";
+export const DCAI_RPC_DIRECT = "http://139.180.188.61:8545";
+export const DCAI_RPC_API = "http://139.180.140.143/rpc/basic/51c164ea2954246fdc2da538954385c8/";
+export const DCAI_RPC_URL = DCAI_RPC_API; // Default to the more stable one
+export const DCAI_EXPLORER = "http://139.180.140.143";
+
+// Contracts
+export const BUILDER_PASS = "0x08A8C0497f2756676dEeE5ba32935B2152adF968";
+export const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
+export const REPORT_CONTRACT = "0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da";
+export const OPERATOR_REGISTRY = "0xb37c81eBC4b1B4bdD5476fe182D6C72133F41db9";
+export const MERKLE_REWARD = "0x728f2C63b9A0ff0918F5ffB3D4C2d004107476B7";

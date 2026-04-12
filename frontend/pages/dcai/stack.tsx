@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { ethers } from "ethers";
 import Header from "@/components/Header";
 
-const DCAI_RPC_PROXY = "http://localhost:3000/api/dcai/rpc";
+const DCAI_RPC_PROXY = typeof window !== "undefined" ? window.location.origin + "/api/dcai/rpc" : "http://localhost:3000/api/dcai/rpc";
 const DCAI_CHAIN_ID = "0x4809";
 const EXPLORER = "http://139.180.140.143";
 
@@ -162,10 +162,23 @@ export default function StackPage() {
     } finally { setLoading(null); }
   };
 
+  // Auto-flush stuck txs before sending
+  const autoFlush = async (addr: string) => {
+    try {
+      await fetch("/api/dcai/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+    } catch { /* silent */ }
+  };
+
   // Send tx to a specific contract via wallet
   const sendTx = async (to: string, data: string, value: bigint) => {
     const injected = getInjected();
     if (!injected) throw new Error("No wallet");
+
+    await autoFlush(wallet!);
 
     // Fetch correct nonce from RPC to prevent stale nonce issues
     const provider = new ethers.JsonRpcProvider(DCAI_RPC_PROXY);

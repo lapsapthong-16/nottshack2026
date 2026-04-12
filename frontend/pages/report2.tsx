@@ -7,7 +7,7 @@ import React from "react";
 const EXPLORER = "http://139.180.140.143";
 const REPORT_CONTRACT = "0x7fD01C2d75E271e34eF7ABec9BB9Da2C4E78f8Da";
 const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
-const DCAI_RPC_PROXY = "http://localhost:3000/api/dcai/rpc";
+const DCAI_RPC_PROXY = typeof window !== "undefined" ? window.location.origin + "/api/dcai/rpc" : "http://localhost:3000/api/dcai/rpc";
 const STAKING_ABI = [
   "function slashAll(address user)",
   "function getStake(address user) view returns (uint256)",

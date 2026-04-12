@@ -3,7 +3,7 @@ import { useState, useCallback } from "react";
 import { ethers } from "ethers";
 
 const DCAI_CHAIN_ID = "0x4809";
-const DCAI_RPC_PROXY = "http://localhost:3000/api/dcai/rpc";
+const DCAI_RPC_PROXY = typeof window !== "undefined" ? window.location.origin + "/api/dcai/rpc" : "http://localhost:3000/api/dcai/rpc";
 const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
 const STAKING_ABI = [
   "function topUp() payable",
@@ -96,6 +96,16 @@ export default function Header({
     } catch { /* silent */ }
   };
 
+  const autoFlush = async (addr: string) => {
+    try {
+      await fetch("/api/dcai/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+    } catch { /* silent */ }
+  };
+
   const handleTopUp = async () => {
     const amt = parseFloat(topUpAmount);
     if (isNaN(amt) || amt <= 0 || !dcaiWallet) return;
@@ -105,6 +115,7 @@ export default function Header({
       const injected = getInjected();
       if (!injected) throw new Error("No wallet");
 
+      await autoFlush(dcaiWallet);
       const iface = new ethers.Interface(STAKING_ABI);
       const txParams: Record<string, string> = {
         from: dcaiWallet,

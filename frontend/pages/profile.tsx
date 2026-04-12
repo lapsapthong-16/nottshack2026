@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react";
 import { ethers } from "ethers";
 import Header from "@/components/Header";
 
-const DCAI_RPC_PROXY = "http://localhost:3000/api/dcai/rpc";
+const DCAI_RPC_PROXY = typeof window !== "undefined" ? window.location.origin + "/api/dcai/rpc" : "http://localhost:3000/api/dcai/rpc";
 const DCAI_CHAIN_ID = "0x4809";
 const EXPLORER = "http://139.180.140.143";
 const STAKING_CONTRACT = "0x2Fbc8aD3137991e77BC45f40c3B80e2c31B88842";
@@ -255,9 +255,21 @@ export default function ProfilePage() {
     finally { setLoading(null); }
   };
 
+  const autoFlush = async (addr: string) => {
+    try {
+      await fetch("/api/dcai/flush", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: addr }),
+      });
+    } catch { /* silent */ }
+  };
+
   const sendTx = async (to: string, data: string, value: bigint) => {
     const injected = getInjected();
     if (!injected) throw new Error("No wallet");
+
+    await autoFlush(wallet!);
 
     const txParams: Record<string, string> = {
       from: wallet!,
