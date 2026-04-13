@@ -364,73 +364,6 @@ export default function Landing() {
           </p>
 
 
-          {paymentRoute === "dcai" && (
-            <div className="mt-4 w-full max-w-2xl rounded-2xl border border-amber-300/50 bg-[#fffbf5] p-5 shadow-sm">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600">DCAI Wallet</p>
-                  <h2 className="mt-2 text-xl font-semibold text-[#1a1a1a]">Credits and staking</h2>
-                  <p className="mt-2 text-sm leading-6 text-[#6b6b6b]">
-                    Connect a DCAI wallet, top up credits, and optionally review staking before you start the scan.
-                  </p>
-                  {dcaiConnected && (
-                    <p className="mt-3 text-xs font-mono text-[#8a8580]">
-                      {dcaiWallet?.slice(0, 6)}...{dcaiWallet?.slice(-4)}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-col gap-2 sm:items-end">
-                  <button
-                    type="button"
-                    onClick={() => void ensureDcaiWalletConnected()}
-                    className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-600"
-                  >
-                    {dcaiConnected ? "Refresh DCAI Wallet" : "Connect DCAI Wallet"}
-                  </button>
-                  <Link href="/dcai/stack" className="text-sm text-amber-700 hover:text-amber-800">
-                    Open staking dashboard
-                  </Link>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Credits</p>
-                  <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">
-                    {dcaiCredits ? `${parseFloat(dcaiCredits).toFixed(4)} tDCAI` : "Not connected"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Stake</p>
-                  <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">
-                    {dcaiStake ? `${parseFloat(dcaiStake).toFixed(4)} tDCAI` : "Not connected"}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Quick Top Up</p>
-                  <div className="mt-2 flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="0.001"
-                      step="0.001"
-                      value={topUpAmount}
-                      onChange={(e) => setTopUpAmount(e.target.value)}
-                      className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void handleDcaiTopUp()}
-                      disabled={topUpLoading}
-                      className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
-                    >
-                      {topUpLoading ? "..." : "Top Up"}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
           {!mounted ? (
             <div className="mt-10 h-[52px]" />
           ) : (
@@ -527,6 +460,72 @@ export default function Landing() {
                 </button>
               </form>
 
+              {paymentRoute === "dcai" && (
+                <div className="w-full rounded-2xl border border-amber-300/50 bg-[#fffbf5] p-5 shadow-sm">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-600">DCAI Wallet</p>
+                      <h2 className="mt-2 text-xl font-semibold text-[#1a1a1a]">Credits and staking</h2>
+                      <p className="mt-2 text-sm leading-6 text-[#6b6b6b]">
+                        Connect a DCAI wallet, top up credits, and optionally review staking before you start the scan.
+                      </p>
+                      {dcaiConnected && (
+                        <p className="mt-3 text-xs font-mono text-[#8a8580]">
+                          {dcaiWallet?.slice(0, 6)}...{dcaiWallet?.slice(-4)}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2 sm:items-end">
+                      <button
+                        type="button"
+                        onClick={() => void ensureDcaiWalletConnected()}
+                        className="rounded-xl bg-amber-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-amber-600"
+                      >
+                        {dcaiConnected ? "Refresh DCAI Wallet" : "Connect DCAI Wallet"}
+                      </button>
+                      <Link href="/dcai/stack" className="text-sm text-amber-700 hover:text-amber-800">
+                        Open staking dashboard
+                      </Link>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Credits</p>
+                      <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">
+                        {dcaiCredits ? `${parseFloat(dcaiCredits).toFixed(4)} tDCAI` : "Not connected"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Stake</p>
+                      <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">
+                        {dcaiStake ? `${parseFloat(dcaiStake).toFixed(4)} tDCAI` : "Not connected"}
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                      <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Quick Top Up</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0.001"
+                          step="0.001"
+                          value={topUpAmount}
+                          onChange={(e) => setTopUpAmount(e.target.value)}
+                          className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleDcaiTopUp()}
+                          disabled={topUpLoading}
+                          className="rounded-lg bg-[#1a1a1a] px-3 py-2 text-xs font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                        >
+                          {topUpLoading ? "..." : "Top Up"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {quoteError && (
                 <div className="w-full rounded-xl border border-[#e85c5c33] bg-[#e85c5c11] px-4 py-3 text-sm text-[#b14a4a]">
@@ -581,7 +580,7 @@ export default function Landing() {
                   <h2 className="mt-1 text-xl font-semibold text-[#1a1a1a]">
                     {quote.package}<span className="ml-2 font-mono text-sm text-[#8a8580]">@{quote.version}</span>
                   </h2>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
                     <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
                       <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Charge</p>
                       <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{quote.estimateTDcai} tDCAI</p>
@@ -594,10 +593,7 @@ export default function Landing() {
                       <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Estimated Minutes</p>
                       <p className="mt-1 text-lg font-semibold text-[#1a1a1a]">{quote.estimatedMinutes}</p>
                     </div>
-                    <div className="rounded-xl border border-amber-200 bg-amber-50/50 p-3">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-amber-600">Backed By</p>
-                      <p className="mt-1 text-sm font-semibold text-[#1a1a1a]">Dash Drive publish from backend identity</p>
-                    </div>
+
                   </div>
                   <p className="mt-4 text-sm leading-6 text-[#6b6b6b]">
                     Your DCAI wallet will burn credits now. After the scan, Validus publishes the report to Dash Drive from the configured server identity.

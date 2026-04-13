@@ -28,6 +28,15 @@ In 2025, the `colors.js` and `faker.js` npm packages were intentionally sabotage
 
 ---
 
+NGOs: A small NGO uses an open-source donor management app. One of its npm dependencies is updated with malicious code that silently steals environment variables during install. The leaked secrets include the NGO's database credentials and email API keys, exposing donor data and forcing the NGO to shut down its donation portal for days. A dependency-audit tool like Validus could flag the suspicious install script, outbound network calls, and secret-access behavior before deployment — protecting the donors and the organization's mission.
+
+Schools: A school IT team installs a package update for its learning portal. The package contains hidden malware that exfiltrates student records and admin tokens. Student names, grades, and parent contact information are leaked. Validus would scan the package before installation and warn the team before the malicious update reaches production — keeping student data safe.
+
+Low-Budget Startups: A bootstrapped startup with no dedicated security team ships a product built on 200+ npm packages. They can't afford a manual security audit for each dependency. One malicious package update slips in, and their entire user database is compromised before they even launch. Validus provides automated, affordable, AI-powered auditing that any team can access — no security budget required, just top up tDCAI and scan.
+
+The common thread: organizations that can least afford a breach are the most vulnerable. Validus makes enterprise-grade supply chain security accessible to everyone through decentralized AI and transparent on-chain accountability.
+---
+
 ## The Solution: Validus
 
 Validus is a decentralized AI-powered security audit platform that scans npm packages for malicious code, vulnerabilities, and supply chain risks. Every audit result is stored on-chain for full transparency, and AI node providers are economically incentivized through staking to deliver accurate, honest audits.
@@ -155,8 +164,6 @@ Dash Platform provides the identity and data layer for Validus:
 | **Data Contracts** | Structured audit metadata stored on Dash Platform for cross-chain discoverability |
 | **Ceiling Estimates** | Scan pricing quotes are generated based on billable lines and estimated time, denominated in tDASH |
 
----
-
 ## How We Utilize DCAI L3
 
 DCAI L3 is the EVM-compatible execution layer where all financial and audit logic runs:
@@ -168,6 +175,23 @@ DCAI L3 is the EVM-compatible execution layer where all financial and audit logi
 | **Slash** | If an AI node provider submits a dishonest audit (e.g., claims malicious code is safe), their entire stake is slashed through the on-chain resolution process |
 | **On-Chain Reports** | Every audit report is submitted to the ValidusReport contract — anyone can query and verify results |
 | **Builder Pass NFT** | Access control via ERC-721 token ownership on DCAI L3 |
+
+---
+
+## Why DCAI L3? — The Technical Justification
+
+Validus is built on the **DCAI L3** because it provides the **Architecture of Accountability** that traditional blockchains lack for AI workloads:
+
+### 1. Slashable AI Logic
+Standard networks are "AI-blind." DCAI allows us to build a protocol where **AI inference is backed by a financial bond**. If an AI node provider submits a dishonest or negligent audit, the DCAI L3 provides the specific state-handling needed to verify the failure and execute an on-chain slash. This makes AI "economically honest."
+
+### 2. Decoupled Compute & Verification
+Scaling security audits for millions of npm packages is impossible locally. By using DCAI, we tap into a **distributed marketplace of auditor nodes**. The Node Providers handle the heavy lifting of running LLMs (like GPT-5-mini or Llama-3) in isolated sandboxes, while the DCAI L3 handles the **verification of truth** and the reputation management.
+
+### 3. Sub-Second Finality for Supply Chain Security
+Security audits happen in real-time. When a developer runs `npm install`, they need an answer in seconds. DCAI's L3 architecture provides the ultra-low latency required to "pause" a malicious install script before it can exfiltrate secrets, a feat that would be too slow and expensive on shared L2s.
+
+---
 
 ---
 

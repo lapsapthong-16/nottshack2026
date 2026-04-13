@@ -88,6 +88,12 @@ export default function PayScan() {
     void router.replace(`/report/${encodeURIComponent(data.billing.scan_id)}`);
   }, [data, router]);
 
+  useEffect(() => {
+    if (data && data.paymentRoute === "dash" && data.billing.payment_status === "pending" && !isPaying) {
+      void handlePayment();
+    }
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handlePayment() {
     if (!data || isPaying) return;
 
@@ -248,53 +254,38 @@ export default function PayScan() {
                   <span className="ml-2 font-mono text-base font-medium text-[#8a8580]">@{data.billing.version}</span>
                 </h1>
                 <p className="mt-3 text-sm leading-6 text-[#6b6b6b]">
-                  This scan is complete. The exact dynamic charge has been calculated and is ready for approval in the extension.
+                  This scan is complete. Please approve the final transaction in your Dash Platform extension to unlock the full report.
                 </p>
 
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-4">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Option 1: Dash Platform</p>
-                    <p className="mt-1 text-2xl font-bold">{data.finalAmountTDash} tDASH</p>
-                    <p className="mt-1 text-xs text-[#8a8580]">Network: Dash Evo Testnet</p>
-                  </div>
-                  <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-4">
-                    <p className="text-[10px] uppercase tracking-[0.12em] text-[#8a8580]">Option 2: OKX Wallet</p>
-                    <p className="mt-1 text-2xl font-bold">{data.billing.final_amount_credits} tDCAI</p>
-                    <p className="mt-1 text-xs text-[#8a8580]">Network: DCAI L3 Testnet</p>
+                <div className="mt-6">
+                  <div className="rounded-xl border border-[#eee7df] bg-[#faf8f5] p-5">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8a8580]">Dynamic Billing Amount</p>
+                    <p className="mt-2 text-3xl font-bold">{data.finalAmountTDash} tDASH</p>
+                    <p className="mt-2 text-xs text-[#8a8580]">Approval requested via Dash Evo Testnet</p>
                   </div>
                 </div>
 
-                <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs text-[#8a8580]">
-                    Select your preferred payment method above.
+                    Charge is based on actual billable lines and scan duration.
                   </p>
                   {data.billing.payment_status === "paid" ? (
                     <button
                       type="button"
                       disabled
-                      className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white opacity-50"
+                      className="rounded-xl bg-[#1a1a1a] px-6 py-3.5 text-sm font-medium text-white opacity-50"
                     >
                       Already Paid
                     </button>
                   ) : (
-                    <div className="flex gap-3">
-                      <button
-                        type="button"
-                        onClick={handlePayment}
-                        disabled={isPaying}
-                        className="rounded-xl bg-[#1a1a1a] px-5 py-3 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isPaying ? "Processing..." : "Pay with Dash"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleDcaiPayment}
-                        disabled={isPaying}
-                        className="rounded-xl bg-amber-500 px-5 py-3 text-sm font-medium text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isPaying ? "Processing..." : "Pay with tDCAI"}
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handlePayment}
+                      disabled={isPaying}
+                      className="rounded-xl bg-[#1a1a1a] px-8 py-3.5 text-sm font-medium text-white shadow-lg transition hover:bg-[#000] hover:shadow-xl active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {isPaying ? "Processing..." : "Approve & Unlock Report"}
+                    </button>
                   )}
                 </div>
               </>

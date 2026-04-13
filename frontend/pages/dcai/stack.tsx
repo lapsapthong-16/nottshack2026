@@ -133,22 +133,23 @@ export default function StackPage() {
 
       const accounts: string[] = await injected.request({ method: "eth_requestAccounts" });
 
+      // Always call wallet_addEthereumChain first to overwrite any stale RPC URL
+      // (wallet_addEthereumChain updates the config if the chain is already known)
+      const localRpc = window.location.origin + "/api/dcai/rpc";
       try {
-        await injected.request({ method: "wallet_switchEthereumChain", params: [{ chainId: DCAI_CHAIN_ID }] });
-      } catch (err: any) {
-        if (err.code === 4902) {
-          await injected.request({
-            method: "wallet_addEthereumChain",
-            params: [{
-              chainId: DCAI_CHAIN_ID,
-              chainName: "DCAI L3 Testnet",
-              nativeCurrency: { name: "tDCAI", symbol: "tDCAI", decimals: 18 },
-              rpcUrls: ["http://139.180.188.61:8545"],
-              blockExplorerUrls: [EXPLORER],
-            }],
-          });
-        } else { throw err; }
-      }
+        await injected.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: DCAI_CHAIN_ID,
+            chainName: "DCAI L3 Testnet",
+            nativeCurrency: { name: "tDCAI", symbol: "tDCAI", decimals: 18 },
+            rpcUrls: [localRpc],
+            blockExplorerUrls: [EXPLORER],
+          }],
+        });
+      } catch { /* ignore – chain may already be active */ }
+
+      await injected.request({ method: "wallet_switchEthereumChain", params: [{ chainId: DCAI_CHAIN_ID }] });
 
       const addr = accounts[0];
       setWallet(addr);
